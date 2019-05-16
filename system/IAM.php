@@ -1,6 +1,8 @@
 <?php
 // working with git operators
 include_once 'Git.php';
+$here = __FILE__;
+define('IAM_ROOT', str_replace('/system/IAM.php', '', $here));
 class IAM {
   public $name;
   public $domain;
@@ -16,13 +18,13 @@ class IAM {
     $this->domain = $_SERVER['HTTP_HOST'];
     // auto generate base path
     $this->basePath = '/';
-    $this->coreDir = dirname(__FILE__) . '/../cores/haxcms';
+    $this->coreDir = dirname(__FILE__) . '/../cores/HAXcms';
   }
   /**
    * Replicate and establish a new HAXcms manager
    */
   public function liberate($targetDir) {
-    // open haxcms directory
+    // open HAXcms directory
     $dir = opendir($this->coreDir);
     $userDir = dirname(__FILE__) . '/../users/' . $targetDir;
     $userSitesDir = dirname(__FILE__) . '/../users_sites/' . $targetDir;
@@ -30,27 +32,32 @@ class IAM {
     @mkdir($userDir, 0755, TRUE);
     @mkdir($userSitesDir, 0777, TRUE);
     @mkdir($userSitesDir . '/_sites', 0777, TRUE);
+    @mkdir($userSitesDir . '/_archived', 0777, TRUE);
+    @mkdir($userSitesDir . '/_published', 0777, TRUE);
     // make a config directory
     @mkdir($userDir . '/_config', 0777, TRUE);
     $configDir = opendir($userDir . '/_config');
-    @symlink('../../../cores/haxcms/_config/config.json', $userDir . '/_config/config.json');
-    @symlink('../../../cores/haxcms/_config/.htaccess', $userDir . '/_config/.htaccess');
-    @symlink('../../../cores/haxcms/_config/SALT.txt', $userDir . '/_config/SALT.txt');
-    @symlink('../../../cores/haxcms/_config/my-custom-elements.js', $userDir . '/_config/my-custom-elements.js');
+    @symlink('../../../_iamConfig/config.json', $userDir . '/_config/config.json');
+    @symlink('../../../_iamConfig/.htaccess', $userDir . '/_config/.htaccess');
+    @symlink('../../../_iamConfig/SALT.txt', $userDir . '/_config/SALT.txt');
+    @symlink('../../../_iamConfig/my-custom-elements.js', $userDir . '/_config/my-custom-elements.js');
+    @symlink('../../users_sites/' . $targetDir . '/_sites', $userDir . '/sites');
+    @symlink('../../users_sites/' . $targetDir . '/_published', $userDir . '/published');
+    @symlink('../../users_sites/' . $targetDir . '/_archived', $userDir . '/archived');
     @symlink('../../users_sites/' . $targetDir . '/_sites', $userDir . '/_sites');
+    @symlink('../../users_sites/' . $targetDir . '/_published', $userDir . '/_published');
+    @symlink('../../users_sites/' . $targetDir . '/_archived', $userDir . '/_archived');
     @copy($this->coreDir . "/_config/config.php", $userDir . "/_config/config.php");
     $basePath = "\n" . '$HAXCMS->basePath = "/users/' . $targetDir . '/";';
     @file_put_contents($userDir . '/_config/config.php', $basePath . PHP_EOL , FILE_APPEND | LOCK_EX);
     // make a sites directory so we can save into it
-    @symlink('../../cores/haxcms/' . $file, $userDir . '/' . $file);
-    // copy sites.json boilerplate
-    @copy($this->coreDir . "/system/boilerplate/systemsetup/sites.json", $userDir . "/_sites/sites.json");
+    @symlink('../../cores/HAXcms/' . $file, $userDir . '/' . $file);
     // link the config directories together
-    @symlink('../../cores/haxcms/' . $file, $userDir . '/' . $file);
+    @symlink('../../cores/HAXcms/' . $file, $userDir . '/' . $file);
     // see if we can make the directory to start off
     while (FALSE !== ( $file = readdir($dir)) ) {
-      if ($file != '.' && $file != '..' && $file != '_config' && $file != '_sites') {
-        @symlink('../../cores/haxcms/' . $file, $userDir . '/' . $file);
+      if ($file != '.' && $file != '..' && $file != '_config' && $file != '_archived' && $file != '_sites' && $file != '_published' && $file != 'archived' && $file != 'sites' && $file != 'published') {
+        @symlink('../../cores/HAXcms/' . $file, $userDir . '/' . $file);
       }
     }
     closedir($dir);

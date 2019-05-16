@@ -26,3 +26,27 @@ haxwarn(){
 getuuid(){
   echo $(cat /proc/sys/kernel/random/uuid)
 }
+
+cd cores
+git clone https://github.com/elmsln/HAXcms.git HAXcms
+cd HAXcms
+# this file tells HAXcms that it is running in an IAM configuration
+touch IAM
+# act like we're installing those these config files will only be partly used
+bash scripts/haxtheweb.sh "$(getuuid)" "$(getuuid)"
+# work on config boilerplate
+if [ ! -f "../../_iamConfig/config.json" ]; then
+  cp _config/config.json ../../_iamConfig/config.json
+fi
+if [ ! -f "../../_iamConfig/my-custom-elements.js" ]; then
+  cp _config/my-custom-elements.js ../../_iamConfig/my-custom-elements.js
+fi
+if [ ! -f "../../_iamConfig/config.php" ]; then
+  cp _config/config.php ../../_iamConfig/config.php
+fi
+if [ ! -f "../../_iamConfig/.htaccess" ]; then
+  cp _config/.htaccess ../../_iamConfig/.htaccess
+fi
+if [ ! -f "../../_iamConfig/SALT.txt" ]; then
+  cp _config/SALT.txt ../../_iamConfig/.htaccess
+fi
