@@ -1,17 +1,17 @@
 <?php
 // working with git operators
-// @todo very specific to web access currently
-include_once 'IAM.php';
-if (isset($_SERVER['REMOTE_USER'])) {
-    if (!is_dir(IAM_ROOT . '/users/' . $_SERVER['REMOTE_USER'])) {
-        $iam = new IAM();
-        $iam->liberate($_SERVER['REMOTE_USER']);
-        header("Location: /users/" . $_SERVER['REMOTE_USER']);
+include_once 'lib/IAM.php';
+include_once IAM_ROOT . '/_iamConfig/iamConfig.php';
+// if we have an enterprise user, that means they logged in via that system
+if (isset($IAM->enterprise->userVar)) {
+    if (!is_dir(IAM_ROOT . '/users/' . $IAM->enterprise->userVar)) {
+        $IAM->liberate($IAM->enterprise->userVar);
+        header("Location: /" . $IAM->enterprise->userVar);
     }
     else {
-        header("Location: /users/" . $_SERVER['REMOTE_USER']);
+        header("Location: /" . $IAM->enterprise->userVar);
     }
 }
 else {
-  header("Location: /cosign?redirect_url=/system/grantFreedom.php");
+  header("Location: " . $IAM->enterprise->login);
 }
