@@ -21,6 +21,6 @@ if (isset($_SERVER['REMOTE_USER'])) {
     header("Location: /");
   }
   // hide logout / special button
-  $HAXCMS->siteListing->attr = 'hide-login hide-global-settings';
   $HAXCMS->siteListing->slot = '';
+  $HAXCMS->siteListing->attr = 'hide-login hide-global-settings hide-camera';
 }
