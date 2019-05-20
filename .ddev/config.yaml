@@ -85,3 +85,7 @@ provider: default
 # information on the commands that can be extended and the tasks you can define
 # for them. Example:
 #hooks:
+hooks:
+  post-start:
+  - exec: bash scripts/whateveryousayiam.sh
+  - exec: echo 'go to http://haxiam.ddev.local'
