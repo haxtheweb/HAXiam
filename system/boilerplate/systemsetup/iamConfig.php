@@ -9,8 +9,8 @@ define('IAM_BASE_DOMAIN', 'hax.WHATEVER.edu');
 define('IAM_EMPOWERED', 'iam');
 $IAM->HAXcmsInit($HAXCMS);
 $IAM->enterprise->iamUrl = IAM_PROTOCOL . IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN . '/';
-$IAM->enterprise->login = IAM_PROTOCOL . IAM_BASE_DOMAIN . '/login.php?redirect_url=/login.php';
 $IAM->enterprise->logout = 'https://ENTERPRISELOGOUT.edu/logout?' . IAM_PROTOCOL . IAM_BASE_DOMAIN . '/';
+$IAM->enterprise->login = '/login.php?redirect_url=/login.php';
 // don't set an enterprise user if we don't have one
 if (isset($_SERVER['REMOTE_USER'])) {
   $IAM->enterprise->userVar = $_SERVER['REMOTE_USER'];
