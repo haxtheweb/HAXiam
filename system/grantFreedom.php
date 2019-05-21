@@ -13,5 +13,5 @@ if (isset($IAM->enterprise->userVar)) {
     }
 }
 else {
-  header("Location: " . $IAM->enterprise->login);
+    header("Location: " . $IAM->enterprise->login);
 }
