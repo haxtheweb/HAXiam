@@ -44,6 +44,7 @@ class IAM {
     // This has to exist for all the relative paths we're using to correctly resolve
     @symlink('../../cores/' . $core . '/build', $userSitesDir . '/build');
     @symlink('../../cores/' . $core . '/babel', $userSitesDir . '/babel');
+    @symlink('../../cores/' . $core . '/haxcms-jwt.php', $userSitesDir . '/haxcms-jwt.php');
     // make a config directory
     @mkdir($userDir . '/_config', 0777, TRUE);
     @symlink('../../../_iamConfig/config.json', $userDir . '/_config/config.json');
