@@ -23,4 +23,4 @@ before_install:
   # install base requirements
   - sudo bash scripts/ubuntu18.04.sh
 script:
-  - bash scripts/haxtheweb.sh admin admin
+  - bash scripts/whateveryousayiam.sh
