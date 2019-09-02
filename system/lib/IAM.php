@@ -16,7 +16,7 @@ class IAM {
   public function __construct() {
     // Get HTTP/HTTPS (the possible values for this vary from server to server)
     $this->protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] && !in_array(strtolower($_SERVER['HTTPS']),array('off','no'))) ? 'https' : 'http';
-    $this->domain = $_SERVER['HTTP_HOST'];
+    $this->domain = (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '');
     // auto generate base path
     $this->basePath = '/';
     $this->coresDir = IAM_ROOT . '/cores';
