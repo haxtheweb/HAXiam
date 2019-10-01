@@ -45,6 +45,7 @@ class IAM {
     @symlink('../../cores/' . $core . '/build', $userSitesDir . '/build');
     @symlink('../../cores/' . $core . '/babel', $userSitesDir . '/babel');
     @symlink('../../cores/' . $core . '/haxcms-jwt.php', $userSitesDir . '/haxcms-jwt.php');
+    @symlink('../../cores/' . $core . '/system', $userSitesDir . '/system');
     // make a config directory
     @mkdir($userDir . '/_config', 0777, TRUE);
     @symlink('../../../_iamConfig/config.json', $userDir . '/_config/config.json');
