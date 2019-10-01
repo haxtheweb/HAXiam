@@ -10,10 +10,17 @@ global $HAXCMS;
 $HAXCMS->addEventListener('haxcms-login-test', array($IAM, 'loginTest'));
 $HAXCMS->addEventListener('haxcms-validate-user', array($IAM, 'validateUser'));
 $HAXCMS->addEventListener('haxcms-jwt-get', array($IAM, 'getJwtUser'));
+// attempt to set base path relative to IAM configuration from how script loaded
+if (isset($_SERVER['SCRIPT_NAME'])) {
+    $base = explode('/', $_SERVER['SCRIPT_NAME']);
+    // sanity check to ensure that the base being requested is an actual user site that exists
+    if (isset($base[1]) && file_exists(__DIR__ . '/../users/' . $base[1] . '/')) {
+        $HAXCMS->basePath = "/" . $base[1] . '/';
+    }
+}
 // if we have a remote user, set that as the userVar
 if (isset($IAM->enterprise->userVar)) {
     $HAXCMS->user->name = $IAM->enterprise->userVar;
-    $HAXCMS->basePath = "/" . $IAM->enterprise->userVar . '/';
     // generate JWT so that front end will automatically login!!
     $HAXCMS->config->appJWTConnectionSettings->jwt = $HAXCMS->getJWT();
     $HAXCMS->config->appJWTConnectionSettings->login =  $IAM->enterprise->login;
