@@ -10,6 +10,7 @@ global $HAXCMS;
 $HAXCMS->addEventListener('haxcms-login-test', array($IAM, 'loginTest'));
 $HAXCMS->addEventListener('haxcms-validate-user', array($IAM, 'validateUser'));
 $HAXCMS->addEventListener('haxcms-jwt-get', array($IAM, 'getJwtUser'));
+$HAXCMS->addEventListener('haxcms-jwt-invalid', array($IAM, 'jwtInvalid'));
 // attempt to set base path relative to IAM configuration from how script loaded
 if (isset($_SERVER['SCRIPT_NAME'])) {
     $base = explode('/', $_SERVER['SCRIPT_NAME']);

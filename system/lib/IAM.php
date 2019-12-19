@@ -117,6 +117,13 @@ class IAM {
       $token['user'] = $this->enterprise->userVar;
     }
   }
+  /**
+   * Redirect to the login location if jwt invalidated
+   */
+  public function jwtInvalid(&$code) {
+    header("Location: " . $this->enterprise->login);
+    exit();
+  }
 }
 // weird but IAM self-invokes as there can only ever be one enterprise in a session
 global $IAM;
