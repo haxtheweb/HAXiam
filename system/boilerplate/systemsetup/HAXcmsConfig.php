@@ -23,6 +23,7 @@ if (isset($IAM->enterprise->userVar)) {
     $HAXCMS->user->name = $IAM->enterprise->userVar;
     // generate JWT so that front end will automatically login!!
     $HAXCMS->config->appJWTConnectionSettings->jwt = $HAXCMS->getJWT();
+    $HAXCMS->config->appJWTConnectionSettings->redirectUrl = $IAM->enterprise->login;
     $HAXCMS->config->appJWTConnectionSettings->login =  $IAM->enterprise->login;
     $HAXCMS->config->appJWTConnectionSettings->logout = $IAM->enterprise->logout;
 }
