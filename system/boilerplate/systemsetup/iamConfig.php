@@ -24,6 +24,7 @@ if (isset($_SERVER['REMOTE_USER'])) {
   if ($pieces[0] != 'login.php' && $IAM->enterprise->userVar != $pieces[0]) {
     header("Location: " . IAM_PROTOCOL . IAM_OPEN . '.' . IAM_BASE_DOMAIN . $_SERVER['REQUEST_URI']);
   }
+  $HAXCMS->userData->userName = $IAM->enterprise->userVar;
   // hide logout / special button
   $HAXCMS->siteListing->slot = '';
   $HAXCMS->siteListing->attr = 'hide-login hide-global-settings hide-camera';
