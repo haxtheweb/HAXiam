@@ -48,6 +48,7 @@ class IAM {
     @symlink('../../cores/' . $core . '/system', $userSitesDir . '/system');
     // make a config directory
     @mkdir($userDir . '/_config', 0777, TRUE);
+    @copy($userDir . '/system/boilerplate/systemsetup/userData.json', $userDir . '/_config/userData.json');
     @symlink('../../../_iamConfig/config.json', $userDir . '/_config/config.json');
     @symlink('../../../_iamConfig/.htaccess', $userDir . '/_config/.htaccess');
     @symlink('../../../_iamConfig/SALT.txt', $userDir . '/_config/SALT.txt');
@@ -79,7 +80,7 @@ class IAM {
    */
   public function HAXcmsInit(&$hax) {
     // load in core publishing data
-    if (file_exists(IAM_ROOT . '/_iamConfig/publishing.json')) {
+    if (isset($hax->config->publishing) && file_exists(IAM_ROOT . '/_iamConfig/publishing.json')) {
       $publishingData = json_decode(
           file_get_contents(
               IAM_ROOT . '/_iamConfig/publishing.json'
