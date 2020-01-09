@@ -7,6 +7,7 @@ global $HAXCMS;
 define('IAM_PROTOCOL', 'https://');
 define('IAM_BASE_DOMAIN', 'hax.WHATEVER.edu');
 define('IAM_EMPOWERED', 'iam');
+define('IAM_OPEN', 'oer');
 $IAM->HAXcmsInit($HAXCMS);
 $IAM->enterprise->iamUrl = IAM_PROTOCOL . IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN . '/';
 $IAM->enterprise->logout = 'https://ENTERPRISELOGOUT.edu/logout?' . IAM_PROTOCOL . IAM_BASE_DOMAIN . '/';
@@ -18,7 +19,7 @@ if (isset($_SERVER['REMOTE_USER'])) {
   $pieces = explode('/', $_SERVER['REQUEST_URI']);
   array_shift($pieces);
   if ($IAM->enterprise->userVar != $pieces[0]) {
-    header("Location: /");
+    header("Location: " . IAM_PROTOCOL . IAM_OPEN . '.' . IAM_BASE_DOMAIN . $_SERVER['REQUEST_URI']);
   }
   // hide logout / special button
   $HAXCMS->siteListing->slot = '';
