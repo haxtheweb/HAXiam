@@ -15,10 +15,13 @@ $IAM->enterprise->login = '/login.php?redirect_url=/login.php';
 // don't set an enterprise user if we don't have one
 if (isset($_SERVER['REMOTE_USER'])) {
   $IAM->enterprise->userVar = $_SERVER['REMOTE_USER'];
+  if (method_exists($HAXCMS, 'getRefreshToken')) {
+    setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = false, $_httponly = true);
+  }
   // ensure that the user matches the address piece selected
-  $pieces = explode('/', $_SERVER['REQUEST_URI']);
+  $pieces = explode('/', $_SERVER['REQUEST_URI']);  
   array_shift($pieces);
-  if ($IAM->enterprise->userVar != $pieces[0]) {
+  if ($pieces[0] != 'login.php' && $IAM->enterprise->userVar != $pieces[0]) {
     header("Location: " . IAM_PROTOCOL . IAM_OPEN . '.' . IAM_BASE_DOMAIN . $_SERVER['REQUEST_URI']);
   }
   // hide logout / special button
