@@ -14,7 +14,6 @@ $IAM->enterprise->login = '/login.php?redirect_url=/login.php';
 // don't set an enterprise user if we don't have one
 if (isset($_SERVER['REMOTE_USER'])) {
   $IAM->enterprise->userVar = $_SERVER['REMOTE_USER'];
-  setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = false, $_httponly = true);
   // ensure that the user matches the address piece selected
   $pieces = explode('/', $_SERVER['REQUEST_URI']);
   array_shift($pieces);
