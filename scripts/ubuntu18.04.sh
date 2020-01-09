@@ -42,8 +42,5 @@ sudo a2enmod http2
 # enable protocol support
 echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf
 sudo a2enconf http2
-# performance bulk we apply all the time
-sudo cp zzz-performance.conf /etc/apache2/conf-available/zzz-performance.conf
-sudo a2enconf zzz-performance
 # get this party started
 sudo service apache2 restart
