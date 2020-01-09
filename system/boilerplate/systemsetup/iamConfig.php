@@ -28,3 +28,7 @@ if (isset($_SERVER['REMOTE_USER'])) {
   $HAXCMS->siteListing->slot = '';
   $HAXCMS->siteListing->attr = 'hide-login hide-global-settings hide-camera';
 }
+// not logged in but trying to access iam based address
+else if (isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] == IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN) {
+  header("Location: " . IAM_PROTOCOL . IAM_OPEN . '.' . IAM_BASE_DOMAIN . $_SERVER['REQUEST_URI']);
+}
