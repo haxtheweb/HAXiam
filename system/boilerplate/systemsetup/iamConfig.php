@@ -24,6 +24,9 @@ if (isset($_SERVER['REMOTE_USER'])) {
   if ($pieces[0] != 'login.php' && $IAM->enterprise->userVar != $pieces[0]) {
     header("Location: " . IAM_PROTOCOL . IAM_OPEN . '.' . IAM_BASE_DOMAIN . $_SERVER['REQUEST_URI']);
   }
+  // CDN so all paths resolve on front end from 1 place
+  $HAXCMS->cdn = IAM_PROTOCOL . IAM_BASE_DOMAIN . '/cdn/1.x.x/';
+  // bind user name to the enterprise variable
   $HAXCMS->userData->userName = $IAM->enterprise->userVar;
   $HAXCMS->userData->userPicture = '';
   // hide logout / special button
