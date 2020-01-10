@@ -26,7 +26,18 @@ haxwarn(){
 getuuid(){
   echo $(cat /proc/sys/kernel/random/uuid)
 }
-
+# setup config stuff
+mkdir -p _iamConfig/tmp
+mkdir -p _iamConfig/assets
+if [ ! -f "_iamConfig/config.cfg" ]; then
+  touch _iamConfig/config.cfg
+  echo "haxiam='/var/www/iam'" >> _iamConfig/config.cfg
+  echo "haxcms='/var/www/iam/cores/HAXcms-1.x.x'" >> _iamConfig/config.cfg
+  echo "haxcmscore='HAXcms-1.x.x'" >> _iamConfig/config.cfg
+  echo "wwwuser='www-data'" >> _iamConfig/config.cfg
+  echo "webgroup='www-data'" >> _iamConfig/config.cfg
+  cp VERSION.txt _iamConfig/SYSTEM_VERSION.txt
+fi
 cd cores
 # install 1.x.x from raw source if its not here already
 if [ ! -d "HAXcms-1.x.x" ]; then
@@ -42,6 +53,9 @@ touch _config/IAM
 # work on config boilerplate
 if [ ! -f "../../_iamConfig/config.json" ]; then
   cp _config/config.json ../../_iamConfig/config.json
+fi
+if [ ! -f "../../_iamConfig/userData.json" ]; then
+  cp system/boilerplate/systemsetup/userData.json ../../_iamConfig/userData.json
 fi
 if [ ! -f "../../_iamConfig/my-custom-elements.js" ]; then
   cp _config/my-custom-elements.js ../../_iamConfig/my-custom-elements.js
