@@ -1,7 +1,7 @@
 <?php
 define("IAM_INTERNALS", "login");
 include_once 'system/lib/IAM.php';
-include_once IAM_ROOT . '/cores/' . HAXIAM_ACTIVE_CORE . '/system/lib/bootstrapHAX.php';
+include_once IAM_ROOT . '/cores/' . HAXIAM_ACTIVE_CORE . '/system/backend/php/bootstrapHAX.php';
 include_once $HAXCMS->configDirectory . '/config.php';
 if (isset($IAM->enterprise->userVar)) {
 	// execute setting up the IAM wrapper
