@@ -25,4 +25,6 @@ if (isset($IAM->enterprise->userVar)) {
     $HAXCMS->config->appJWTConnectionSettings->jwt = $HAXCMS->getJWT();
     $HAXCMS->config->appJWTConnectionSettings->redirectUrl = $IAM->enterprise->login;
     $HAXCMS->config->appJWTConnectionSettings->login =  $IAM->enterprise->login;
+    // force browser reload if we get a server level error
+    $HAXCMS->config->appJWTConnectionSettings->reloadOnError =  true;
 }
