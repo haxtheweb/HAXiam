@@ -43,6 +43,7 @@ class IAM {
     @symlink($userSitesDir . '/_published', $userSitesDir . '/published');
     // This has to exist for all the relative paths we're using to correctly resolve
     @symlink('../../cores/' . $core . '/build', $userSitesDir . '/build');
+    @symlink('../../cores/' . $core . '/gitlist', $userSitesDir . '/gitlist');
     @symlink('../../cores/' . $core . '/babel', $userSitesDir . '/babel');
     @symlink('../../cores/' . $core . '/haxcms-jwt.php', $userSitesDir . '/haxcms-jwt.php');
     @symlink('../../cores/' . $core . '/system', $userSitesDir . '/system');
@@ -63,10 +64,6 @@ class IAM {
     @symlink('../../users_sites/' . $targetDir . '/_sites', $userDir . '/_sites');
     @symlink('../../users_sites/' . $targetDir . '/_published', $userDir . '/_published');
     @symlink('../../users_sites/' . $targetDir . '/_archived', $userDir . '/_archived');
-    // make a sites directory so we can save into it
-    @symlink('../../cores/' . $core .'/' . $file, $userDir . '/' . $file);
-    // link the config directories together
-    @symlink('../../cores/' . $core . '/' . $file, $userDir . '/' . $file);
     // see if we can make the directory to start off
     while (FALSE !== ( $file = readdir($dir)) ) {
       if ($file != '.' && $file != '..' && $file != '_config' && $file != '_archived' && $file != '_sites' && $file != '_published' && $file != 'archived' && $file != 'sites' && $file != 'published') {
