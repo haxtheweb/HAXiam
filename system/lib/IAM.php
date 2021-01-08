@@ -61,6 +61,7 @@ class IAM {
     @symlink('../../users_sites/' . $targetDir . '/_sites', $userDir . '/sites');
     @symlink('../../users_sites/' . $targetDir . '/_published', $userDir . '/published');
     @symlink('../../users_sites/' . $targetDir . '/_archived', $userDir . '/archived');
+    @symlink('../../users_sites/' . $targetDir . '/gitlist', $userDir . '/gitlist');
     @symlink('../../users_sites/' . $targetDir . '/_sites', $userDir . '/_sites');
     @symlink('../../users_sites/' . $targetDir . '/_published', $userDir . '/_published');
     @symlink('../../users_sites/' . $targetDir . '/_archived', $userDir . '/_archived');
