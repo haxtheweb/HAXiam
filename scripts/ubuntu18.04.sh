@@ -30,12 +30,12 @@ echo "alias g='git'" >> $HOME/.bashrc
 echo "alias l='ls -laHF'" >> $HOME/.bashrc
 source $HOME/.bashrc
 # install php and other important things
-sudo apt-get install -y php7.2-fpm php7.2-zip php7.2-gd php-dom git apache2
+sudo apt-get install -y php7.4-fpm php7.4-zip php7.4-gd php-dom git apache2
 # optional for development
 # sudo apt-get install -y composer nodejs
 sudo a2enmod proxy_fcgi
-sudo a2enconf php7.2-fpm
-sudo a2dismod php7.2
+sudo a2enconf php7.4-fpm
+sudo a2dismod php7.4
 sudo a2dismod mpm_prefork
 sudo a2enmod mpm_event
 sudo a2enmod http2
