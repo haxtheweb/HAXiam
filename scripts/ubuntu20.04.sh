@@ -30,7 +30,7 @@ echo "alias g='git'" >> $HOME/.bashrc
 echo "alias l='ls -laHF'" >> $HOME/.bashrc
 source $HOME/.bashrc
 # install php and other important things
-sudo apt-get install -y php7.4-fpm php7.4-zip php7.4-gd php-dom git apache2
+sudo apt-get install -y php7.4-fpm php7.4-zip php7.4-gd php-dom git apache2 brotli
 # optional for development
 # sudo apt-get install -y composer nodejs
 sudo a2enmod proxy_fcgi
@@ -42,6 +42,7 @@ sudo a2enmod http2
 sudo a2enmod ssl
 sudo a2enmod rewrite
 sudo a2enmod headers
+sudo a2enmod brotli
 # enable protocol support
 echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf
 sudo a2enconf http2
