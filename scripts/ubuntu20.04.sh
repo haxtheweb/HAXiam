@@ -39,6 +39,9 @@ sudo a2dismod php7.4
 sudo a2dismod mpm_prefork
 sudo a2enmod mpm_event
 sudo a2enmod http2
+sudo a2enmod ssl
+sudo a2enmod rewrite
+sudo a2enmod headers
 # enable protocol support
 echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf
 sudo a2enconf http2
