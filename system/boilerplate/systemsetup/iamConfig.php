@@ -12,12 +12,18 @@ session_start();
 if (!empty($session_data)) {
   $_SESSION += $session_data;
 }
-// set the defined defaults
-define('IAM_PROTOCOL', 'https://');
-// replace this with your institution / base
-define('IAM_BASE_DOMAIN', 'hax.WHATEVER.edu');
-define('IAM_EMPOWERED', 'iam');
-define('IAM_OPEN', 'oer');
+// support for local control of these values off file system
+if (file_exists('/var/IAMCONFIG.php')) {
+   include_once '/var/IAMCONFIG.php';
+}
+else {
+  // set the defined defaults
+  define('IAM_PROTOCOL', 'https://');
+  // replace this with your institution
+  define('IAM_BASE_DOMAIN', 'hax.WHATEVER.edu');
+  define('IAM_EMPOWERED', 'iam');
+  define('IAM_OPEN', 'oer');
+}
 // boot up HAXcms
 $IAM->HAXcmsInit($HAXCMS);
 // URL for pointing to the authenitcated / HAXcms space
