@@ -6,7 +6,7 @@ include_once $HAXCMS->configDirectory . '/config.php';
 if (isset($IAM->enterprise->userVar)) {
 	// execute setting up the IAM wrapper
 	setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = false, $_httponly = true);
-	header("Location: " . $IAM->enterprise->iamUrl);
+	header("Location: " . $IAM->enterprise->iamUrl . $IAM->enterprise->userVar);
 }
 else {
 	// do something to login
