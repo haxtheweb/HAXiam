@@ -38,9 +38,9 @@ class IAM {
     @mkdir($userSitesDir . '/_archived', 0777, TRUE);
     @mkdir($userSitesDir . '/_published', 0777, TRUE);
     // nicer name symlinks
-    @symlink($userSitesDir . '/_sites', $userSitesDir . '/sites');
-    @symlink($userSitesDir . '/_archived', $userSitesDir . '/archived');
-    @symlink($userSitesDir . '/_published', $userSitesDir . '/published');
+    @symlink('./_sites', $userSitesDir . '/sites');
+    @symlink('./_archived', $userSitesDir . '/archived');
+    @symlink('./_published', $userSitesDir . '/published');
     // This has to exist for all the relative paths we're using to correctly resolve
     @symlink('../../cores/' . $core . '/build', $userSitesDir . '/build');
     @symlink('../../cores/' . $core . '/gitlist', $userSitesDir . '/gitlist');
