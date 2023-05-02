@@ -29,10 +29,6 @@ if [ -z $1 ]; then
   else
     owner=$1
 fi
-# force permissions for cache directory used by gitlist
-chown $wwwuser:$webgroup _iamConfig/cache -v
-chmod 2775 _iamConfig/cache -v
-
 # chown / chmod the entire thing correctly then we undo what we just did
 # in all of the steps below. This ensure the entire package is devoid of holes
 chown -R $owner:$webgroup "$haxiam"
@@ -47,3 +43,6 @@ for i in $(find $haxiam/users_sites -maxdepth 1 -type d); do
   chown $wwwuser:$webgroup $i -v
   chmod 2775 $i -v
 done
+# force permissions for cache directory used by gitlist
+chown $wwwuser:$webgroup _iamConfig/cache -v
+chmod 2775 _iamConfig/cache -v
