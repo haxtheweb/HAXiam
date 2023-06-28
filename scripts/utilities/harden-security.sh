@@ -32,17 +32,17 @@ fi
 # chown / chmod the entire thing correctly then we undo what we just did
 # in all of the steps below. This ensure the entire package is devoid of holes
 chown -R $owner:$webgroup "$haxiam"
-chmod -R 775 "$haxiam"
+chmod -R 755 "$haxiam"
 for i in $(find $haxiam/users -maxdepth 1 -type d); do
   chown -R $wwwuser:$webgroup $i
   chown $wwwuser:$webgroup $i -v
-  chmod 2775 $i -v
+  chmod 2755 $i -v
 done
 for i in $(find $haxiam/users_sites -maxdepth 1 -type d); do
   chown -R $wwwuser:$webgroup $i
   chown $wwwuser:$webgroup $i -v
-  chmod 2775 $i -v
+  chmod 2755 $i -v
 done
 # force permissions for cache directory used by gitlist
 chown $wwwuser:$webgroup _iamConfig/cache -v
-chmod 2775 _iamConfig/cache -v
+chmod 2755 _iamConfig/cache -v

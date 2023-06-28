@@ -32,11 +32,11 @@ class IAM {
     $userSitesDir = IAM_ROOT . '/users_sites/' . $targetDir;
     // create a user directory
     @mkdir($userDir, 0755, TRUE);
-    @mkdir($userSitesDir, 0777, TRUE);
+    @mkdir($userSitesDir, 0755, TRUE);
     // dev ops names
-    @mkdir($userSitesDir . '/_sites', 0777, TRUE);
-    @mkdir($userSitesDir . '/_archived', 0777, TRUE);
-    @mkdir($userSitesDir . '/_published', 0777, TRUE);
+    @mkdir($userSitesDir . '/_sites', 0755, TRUE);
+    @mkdir($userSitesDir . '/_archived', 0755, TRUE);
+    @mkdir($userSitesDir . '/_published', 0755, TRUE);
     // nicer name symlinks
     @symlink('./_sites', $userSitesDir . '/sites');
     @symlink('./_archived', $userSitesDir . '/archived');
@@ -49,7 +49,7 @@ class IAM {
     @symlink('../../cores/' . $core . '/system', $userSitesDir . '/system');
     @symlink('../../cores/' . $core . '/.htaccess', $userSitesDir . '/.htaccess');
     // make a config directory
-    @mkdir($userDir . '/_config', 0777, TRUE);
+    @mkdir($userDir . '/_config', 0755, TRUE);
     @copy($userDir . '/system/boilerplate/systemsetup/userData.json', $userDir . '/_config/userData.json');
     @symlink('../../../_iamConfig/config.json', $userDir . '/_config/config.json');
     @symlink('../../../_iamConfig/.htaccess', $userDir . '/_config/.htaccess');
