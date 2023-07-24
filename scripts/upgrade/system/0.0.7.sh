@@ -20,7 +20,7 @@ done
 for i in $(find $haxiam/users -maxdepth 1 -type d); do
   if [[ "${haxiam}/users" != "${i}" ]]; then
     cd $i
-    bash $haxiam/cores/HAXcms-1.x.x/scripts/haxcms.sh rebuildManagedFiles __ALL__ $i
+    bash $haxiam/cores/HAXcms-1.x.x/scripts/haxcms.sh rebuildManagedFiles __ALL__ $i $haxiam
     cd ..
   fi
 done
