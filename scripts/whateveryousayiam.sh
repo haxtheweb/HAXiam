@@ -41,7 +41,7 @@ fi
 cd cores
 # install 1.x.x from raw source if its not here already
 if [ ! -d "HAXcms-1.x.x" ]; then
-  git clone https://github.com/elmsln/HAXcms.git HAXcms-1.x.x
+  git clone https://github.com/haxtheweb/haxcms-php.git HAXcms-1.x.x
 fi
 cd HAXcms-1.x.x
 user="$(getuuid)"
@@ -87,7 +87,7 @@ haxwarn "║     H  H     A   A    X   X     III    A   A    M     M       ║"
 haxecho "║                                                               ║"
 haxecho "╟───────────────────────────────────────────────────────────────╢"
 haxecho "║ If you have issues, submit them to                            ║"
-haxwarn "║   http://github.com/elmsln/HAXiam/issues                      ║"
+haxwarn "║   http://github.com/haxtheweb/haxiam/issues                      ║"
 haxecho "╟───────────────────────────────────────────────────────────────╢"
 haxecho "║ ✻NOTES✻                                                       ║"
 haxecho "║ HAXcms customizations happen in _iamConfig/HAXcmsConfig.php   ║"

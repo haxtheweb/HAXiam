@@ -42,7 +42,7 @@ haxcmsversion=$(cat "$haxcms/VERSION.txt")
 config_version=$(cat "$haxiam/_iamConfig/SYSTEM_VERSION.txt")
 # get the latest version
 touch "$haxiam/_iamConfig/tmp/LATEST.txt"
-wget -O- --timeout=5 --tries=2 "https://raw.githubusercontent.com/elmsln/haxcms/master/VERSION.txt" > "$haxiam/_iamConfig/tmp/HAXCMSLATEST.txt"
+wget -O- --timeout=5 --tries=2 "https://raw.githubusercontent.com/haxtheweb/haxcms/master/VERSION.txt" > "$haxiam/_iamConfig/tmp/HAXCMSLATEST.txt"
 haxcmslatestversion=$(cat "${haxiam}/_iamConfig/tmp/HAXCMSLATEST.txt")
 
 if [[ $config_version != $haxiamversion ]]; then
