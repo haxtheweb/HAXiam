@@ -5,3 +5,25 @@ The two most powerful words to follow that which represents you. Your image in t
 
 ## Code
 This is a packaging wrapper for HAXcms to to allow anyone to spawn their own microsite management platform. The intention is that HAXcms microsites can be published to the publishing directory. This directory can define multiple forms of publishing endpoint, all of which are static HAXcms microsites.
+
+This is *not* container based and is instead closer to a WordPress / Drupal concept known as "multi-site" where all of the code is pegged to one code base.
+
+### Advantages
+- Easy to maintain, upgrade 1 package in 1 location, everything is upgraded to match
+- Upgrade all sites at the same time
+- Everything under one directory tree
+- Single sign on documented for Azure AD / OpenIDConnect
+
+### Disadvantages
+- Scale (theoretically..) however this is mitigated by everything being static files with minimal PHP endpoints
+- Security (technically write access to one is write access to all at server level, application manages access)
+- Upgrading 1 site means upgrading all sites (some people want them to be locked in time for stability)
+
+## Installation
+There are install scripts for Ubuntu 20, 22 and 24. You can invoke it as follows
+```bash
+bash scripts/install/ubuntu24.04.sh
+```
+
+## Configuration
+After installation make sure you review the files created in the _config/ directory. These files are commented heavily as to what they do. You can see the two main ones under `system/boilerplate/systemsetup` but let the system install so that you can modify them in the appropriate location.
