@@ -19,6 +19,11 @@ This is *not* container based and is instead closer to a WordPress / Drupal conc
 - Security (technically write access to one is write access to all at server level, application manages access)
 - Upgrading 1 site means upgrading all sites (some people want them to be locked in time for stability)
 
+## Quick installation
+```bash
+$ curl -fsSL https://raw.githubusercontent.com/haxtheweb/HAXiam/master/scripts/install/ubuntu24.04.sh -o ubuntu24.04.sh && sh ubuntu24.04.sh
+```
+
 ## Installation
 There are install scripts for Ubuntu 20, 22 and 24. You can invoke it as follows
 ```bash
