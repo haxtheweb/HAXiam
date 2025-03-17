@@ -39,7 +39,7 @@ sudo apt-get install -y php8.3-fpm php8.3-zip php8.3-gd php8.3-dom php8.3-mbstri
 
 # Enable Apache modules
 sudo a2enmod proxy_fcgi
-sudo a2enconf php8.2-fpm
+sudo a2enconf php8.3-fpm
 sudo a2dismod mpm_prefork
 sudo a2enmod mpm_event
 sudo a2enmod http2
