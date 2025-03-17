@@ -49,7 +49,8 @@ sudo a2enmod headers
 sudo a2enmod brotli
 
 # Enable protocol support
-echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf
+sudo -i
+sudo echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf
 sudo a2enconf http2
 
 # Restart Apache to apply all changes
