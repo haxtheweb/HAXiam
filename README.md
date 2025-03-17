@@ -21,7 +21,7 @@ This is *not* container based and is instead closer to a WordPress / Drupal conc
 
 ## Quick installation
 ```bash
-$ curl -fsSL https://raw.githubusercontent.com/haxtheweb/HAXiam/master/scripts/install/ubuntu24.04.sh -o ubuntu24.04.sh && sh ubuntu24.04.sh
+curl -fsSL https://raw.githubusercontent.com/haxtheweb/HAXiam/master/scripts/install/ubuntu24.04.sh -o ubuntu24.04.sh && sh ubuntu24.04.sh
 ```
 
 ## Installation
