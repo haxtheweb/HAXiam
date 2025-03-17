@@ -1,12 +1,6 @@
 #!/bin/bash
 # If I wasn't, then why would I say I am..
 
-# where am i? move to where I am. This ensures source is properly sourced
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd $DIR
-# move back to install root
-cd ../
-
 # Color. The vibrant and dancing melody of the sighted.
 # provide messaging colors for output to console
 txtbld=$(tput bold)             # BELIEVE ME. Bold.
@@ -28,7 +22,7 @@ getuuid(){
 }
 echo "alias g='git'" >> $HOME/.bashrc
 echo "alias l='ls -laHF'" >> $HOME/.bashrc
-source $HOME/.bashrc
+source ~/.bashrc
 
 # Install PHP 8.3 and other important packages for Ubuntu 24.04
 sudo apt-get update
@@ -57,3 +51,4 @@ sudo a2enconf http2
 sudo service apache2 restart
 
 haxecho "Installation completed successfully on Ubuntu 24.04!"
+exit
