@@ -79,6 +79,17 @@ else if (
 else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
   // we are in a site
   // and it is our site
+  // and we are NOT on the IAM address
+  // redirect them over to the editing address, tho this only resolves PRIVATE domain over to editing domain
+  if (
+    isset($site) && 
+    $siteownername != '' && $_SESSION['HAXIAM_USER'] == $siteownername &&
+    isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] != IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN
+  ) {
+      header("Location: " . IAM_PROTOCOL . IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN . $_SERVER['REQUEST_URI']);
+  }
+  // we are in a site
+  // and it is our site
   // and we are on the IAM address
   if (
     isset($site) && 
