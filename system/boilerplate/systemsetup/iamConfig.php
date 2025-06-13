@@ -153,5 +153,5 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
 }
 // not logged in but trying to access iam based address
 else if (isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] == IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN) {
-	header("Location: " . IAM_PROTOCOL . IAM_BASE_DOMAIN . $IAM->enterprise->login);
+  header("Location: " . IAM_PROTOCOL . IAM_OPEN . '.' . IAM_BASE_DOMAIN . $_SERVER['REQUEST_URI']);
 }
