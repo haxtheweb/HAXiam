@@ -23,7 +23,7 @@ else {
 }
 $IAM->HAXcmsInit($HAXCMS);
 $IAM->enterprise->iamUrl = IAM_PROTOCOL . IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN . '/';
-$IAM->enterprise->logout = 'https://ENTERPRISELOGOUT.psu.edu/cgi-bin/logout?' . IAM_PROTOCOL . IAM_BASE_DOMAIN . '/';
+$IAM->enterprise->logout = 'https://login.microsoftonline.com/your_tenant_id/oauth2/v2.0/logout';
 $IAM->enterprise->login = '/login.php';
 // CDN so all paths resolve on front end from 1 place
 if ($HAXCMS) {
@@ -153,5 +153,12 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
 }
 // not logged in but trying to access iam based address
 else if (isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] == IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN) {
-  header("Location: " . IAM_PROTOCOL . IAM_OPEN . '.' . IAM_BASE_DOMAIN . $_SERVER['REQUEST_URI']);
+  // if we don't have a  site, the user should be redirected to login
+  if (!isset($site)) {
+	  header("Location: " . IAM_PROTOCOL . IAM_BASE_DOMAIN . $IAM->enterprise->login);
+  }
+  // if we do have a site, we should redirect to the open side of that domain
+  else {
+    header("Location: " . IAM_PROTOCOL . IAM_OPEN . '.' . IAM_BASE_DOMAIN . $_SERVER['REQUEST_URI']);
+  }
 }
