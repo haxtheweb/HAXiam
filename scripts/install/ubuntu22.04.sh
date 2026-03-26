@@ -47,6 +47,7 @@ sudo a2enmod ssl
 sudo a2enmod rewrite
 sudo a2enmod headers
 sudo a2enmod brotli
+sudo a2dismod status
 
 # Enable protocol support
 echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf

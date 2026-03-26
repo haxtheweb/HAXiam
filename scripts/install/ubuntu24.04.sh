@@ -41,6 +41,7 @@ sudo a2enmod ssl
 sudo a2enmod rewrite
 sudo a2enmod headers
 sudo a2enmod brotli
+sudo a2dismod status
 
 # Enable protocol support
 sudo -i
