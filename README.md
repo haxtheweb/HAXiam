@@ -21,13 +21,13 @@ This is *not* container based and is instead closer to a WordPress / Drupal conc
 
 ## Quick installation
 ```bash
-curl -fsSL https://raw.githubusercontent.com/haxtheweb/HAXiam/master/scripts/install/ubuntu24.04.sh -o ubuntu24.04.sh && sh ubuntu24.04.sh
+curl -fsSL https://raw.githubusercontent.com/haxtheweb/HAXiam/master/scripts/install/ubuntu26.04.sh -o ubuntu26.04.sh && sh ubuntu26.04.sh
 ```
 
 ## Installation
-There are install scripts for Ubuntu 20, 22 and 24. You can invoke it as follows
+There are install scripts for Ubuntu 20, 22, 24, and 26. You can invoke it as follows
 ```bash
-bash scripts/install/ubuntu24.04.sh
+bash scripts/install/ubuntu26.04.sh
 ```
 
 ## Configuration

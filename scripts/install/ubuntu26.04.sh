@@ -1,12 +1,6 @@
 #!/bin/bash
 # If I wasn't, then why would I say I am..
 
-# where am i? move to where I am. This ensures source is properly sourced
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd $DIR
-# move back to install root
-cd ../
-
 # Color. The vibrant and dancing melody of the sighted.
 # provide messaging colors for output to console
 txtbld=$(tput bold)             # BELIEVE ME. Bold.
@@ -28,14 +22,18 @@ getuuid(){
 }
 echo "alias g='git'" >> $HOME/.bashrc
 echo "alias l='ls -laHF'" >> $HOME/.bashrc
-source $HOME/.bashrc
-# install php and other important things
-sudo apt-get install -y php7.4-fpm php7.4-zip php7.4-gd php-dom git apache2 brotli php7.4-mbstring php7.4-yaml
-# optional for development
+source ~/.bashrc
+
+# Install PHP 8.5 and other important packages for Ubuntu 26.04
+sudo apt-get update
+sudo apt-get install -y php8.5-fpm php8.5-zip php8.5-gd php8.5-dom php8.5-mbstring php8.5-yaml git apache2 brotli
+
+# Optional for development (composer, nodejs)
 # sudo apt-get install -y composer nodejs
+
+# Enable Apache modules
 sudo a2enmod proxy_fcgi
-sudo a2enconf php7.4-fpm
-sudo a2dismod php7.4
+sudo a2enconf php8.5-fpm
 sudo a2dismod mpm_prefork
 sudo a2enmod mpm_event
 sudo a2enmod http2
@@ -44,8 +42,14 @@ sudo a2enmod rewrite
 sudo a2enmod headers
 sudo a2enmod brotli
 sudo a2dismod status
-# enable protocol support
-echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf
+
+# Enable protocol support
+sudo -i
+sudo echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf
 sudo a2enconf http2
-# get this party started
+
+# Restart Apache to apply all changes
 sudo service apache2 restart
+
+haxecho "Installation completed successfully on Ubuntu 26.04!"
+exit

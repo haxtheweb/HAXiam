@@ -32,7 +32,7 @@ source $HOME/.bashrc
 
 # Install PHP 8.1 and other important packages for Ubuntu 22.04
 sudo apt-get update
-sudo apt-get install -y php8.1-fpm php8.1-zip php8.1-gd php8.1-dom php8.1-mbstring git apache2 brotli
+sudo apt-get install -y php8.1-fpm php8.1-zip php8.1-gd php8.1-dom php8.1-mbstring php8.1-yaml git apache2 brotli
 
 # Optional for development (composer, nodejs)
 # sudo apt-get install -y composer nodejs

@@ -26,7 +26,7 @@ source ~/.bashrc
 
 # Install PHP 8.3 and other important packages for Ubuntu 24.04
 sudo apt-get update
-sudo apt-get install -y php8.3-fpm php8.3-zip php8.3-gd php8.3-dom php8.3-mbstring git apache2 brotli
+sudo apt-get install -y php8.3-fpm php8.3-zip php8.3-gd php8.3-dom php8.3-mbstring php8.3-yaml git apache2 brotli
 
 # Optional for development (composer, nodejs)
 # sudo apt-get install -y composer nodejs
