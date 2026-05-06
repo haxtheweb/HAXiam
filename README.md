@@ -32,3 +32,28 @@ bash scripts/install/ubuntu26.04.sh
 
 ## Configuration
 After installation make sure you review the files created in the _config/ directory. These files are commented heavily as to what they do. You can see the two main ones under `system/boilerplate/systemsetup` but let the system install so that you can modify them in the appropriate location.
+
+## Organization-wide skeletons (shared templates)
+HAXiam supports shared skeleton templates for all users through a centralized organization directory:
+
+- Shared org templates: `_iamConfig/skeletons`
+- User-private templates remain in each user's own config space
+
+Skeleton resolution order is:
+
+1. `users/<username>/_config/user/skeletons` (private user skeletons)
+2. `users/<username>/_config/skeletons` (user instance skeletons)
+3. `_iamConfig/skeletons` (organization-wide shared skeletons)
+4. `cores/HAXcms-1.x.x/system/coreConfig/skeletons` (core defaults)
+
+This preserves private user-created templates while allowing admins to publish templates to everyone.
+
+### Version-control workflow for shared skeletons
+Recommended pattern: manage `_iamConfig/skeletons` as its own Git repository (or a submodule) so teams can push/pull template updates without versioning sensitive `_iamConfig` files.
+
+1. Create a repository for shared skeleton JSON files (example: `haxiam-skeletons`).
+2. Clone it into `_iamConfig/skeletons` in your HAXiam deployment.
+3. Add/update `*.json` skeleton files, commit, and push.
+4. On each HAXiam deployment, run `git pull` in `_iamConfig/skeletons` to deploy template updates for all users.
+
+If you prefer tracking this in the main HAXiam repository, update `.gitignore` carefully so only `_iamConfig/skeletons` is versioned and other `_iamConfig` files remain ignored.
