@@ -74,6 +74,55 @@ class IAM {
     closedir($dir);
   }
   /**
+   * Callback for event: haxcms-skeleton-dirs
+   * Inject shared organization skeleton directory into the directory search order.
+   */
+  public function injectSharedSkeletonDirectories(&$context) {
+    if (!is_object($context)) {
+      return;
+    }
+    if (!isset($context->directories) || !is_array($context->directories)) {
+      $context->directories = array();
+    }
+    $sharedDir = IAM_ROOT . '/_iamConfig/skeletons';
+    if (!is_dir($sharedDir)) {
+      return;
+    }
+    $sharedDir = rtrim($sharedDir, '/');
+    foreach ($context->directories as $existingDir) {
+      if (is_string($existingDir) && rtrim($existingDir, '/') === $sharedDir) {
+        return;
+      }
+    }
+    $coreDir = null;
+    if (
+      isset($context->defaultDirectories) &&
+      is_array($context->defaultDirectories) &&
+      isset($context->defaultDirectories['core']) &&
+      is_string($context->defaultDirectories['core'])
+    ) {
+      $coreDir = rtrim($context->defaultDirectories['core'], '/');
+    }
+    $nextDirs = array();
+    $inserted = false;
+    foreach ($context->directories as $dir) {
+      if (
+        !$inserted &&
+        !is_null($coreDir) &&
+        is_string($dir) &&
+        rtrim($dir, '/') === $coreDir
+      ) {
+        $nextDirs[] = $sharedDir;
+        $inserted = true;
+      }
+      $nextDirs[] = $dir;
+    }
+    if (!$inserted) {
+      $nextDirs[] = $sharedDir;
+    }
+    $context->directories = $nextDirs;
+  }
+  /**
    * Callback for event: haxcms-init
    * Init event for the entire HAXcms environment
    */

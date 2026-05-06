@@ -29,6 +29,7 @@ getuuid(){
 # setup config stuff
 mkdir -p _iamConfig/tmp
 mkdir -p _iamConfig/assets
+mkdir -p _iamConfig/skeletons
 if [ ! -f "_iamConfig/config.cfg" ]; then
   touch _iamConfig/config.cfg
   echo "haxiam='/var/www/iam'" >> _iamConfig/config.cfg
