@@ -69,7 +69,13 @@ vercomp () {
 # variables for finding versions and doing comparisons
 source_dir="${haxiam}/scripts/upgrade/system"
 cd $haxiam
-code_version=$(<VERSION.txt)
+if [ -f "${haxiam}/.version" ]; then
+  code_version=$(<"${haxiam}/.version")
+elif [ -f "${haxiam}/VERSION.txt" ]; then
+  code_version=$(<"${haxiam}/VERSION.txt")
+else
+  code_version="0.0.0"
+fi
 system_version_file="${haxiam}/_iamConfig/SYSTEM_VERSION.txt"
 upgrade_history="${haxiam}/_iamConfig/upgrade_history.txt"
 # make sure config file for version exists

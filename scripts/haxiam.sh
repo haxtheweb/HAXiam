@@ -37,12 +37,15 @@ menuitems() {
   done
   [[ "$msg" ]] && echo "" && echo "$msg"; :
 }
-haxiamversion=$(cat "$haxiam/VERSION.txt")
-haxcmsversion=$(cat "$haxcms/VERSION.txt")
+haxiamversion=$(cat "$haxiam/.version" 2>/dev/null || cat "$haxiam/VERSION.txt")
+haxcmsversion=$(cat "$haxcms/.version" 2>/dev/null || cat "$haxcms/VERSION.txt")
 config_version=$(cat "$haxiam/_iamConfig/SYSTEM_VERSION.txt")
 # get the latest version
 touch "$haxiam/_iamConfig/tmp/LATEST.txt"
-wget -O- --timeout=5 --tries=2 "https://raw.githubusercontent.com/haxtheweb/haxcms/master/VERSION.txt" > "$haxiam/_iamConfig/tmp/HAXCMSLATEST.txt"
+wget -O- --timeout=5 --tries=2 "https://raw.githubusercontent.com/haxtheweb/haxcms/master/.version" > "$haxiam/_iamConfig/tmp/HAXCMSLATEST.txt"
+if [ ! -s "$haxiam/_iamConfig/tmp/HAXCMSLATEST.txt" ]; then
+  wget -O- --timeout=5 --tries=2 "https://raw.githubusercontent.com/haxtheweb/haxcms/master/VERSION.txt" > "$haxiam/_iamConfig/tmp/HAXCMSLATEST.txt"
+fi
 haxcmslatestversion=$(cat "${haxiam}/_iamConfig/tmp/HAXCMSLATEST.txt")
 
 if [[ $config_version != $haxiamversion ]]; then

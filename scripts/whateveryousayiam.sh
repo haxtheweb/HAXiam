@@ -37,7 +37,11 @@ if [ ! -f "_iamConfig/config.cfg" ]; then
   echo "haxcmscore='HAXcms-1.x.x'" >> _iamConfig/config.cfg
   echo "wwwuser='www-data'" >> _iamConfig/config.cfg
   echo "webgroup='www-data'" >> _iamConfig/config.cfg
-  cp VERSION.txt _iamConfig/SYSTEM_VERSION.txt
+  if [ -f ".version" ]; then
+    cp .version _iamConfig/SYSTEM_VERSION.txt
+  elif [ -f "VERSION.txt" ]; then
+    cp VERSION.txt _iamConfig/SYSTEM_VERSION.txt
+  fi
 fi
 cd cores
 # install 1.x.x from raw source if its not here already
