@@ -97,7 +97,15 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
     isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] == IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN
   ) {
     $IAM->enterprise->userVar = $_SESSION['HAXIAM_USER'];
-    if (method_exists($HAXCMS, 'getRefreshToken')) {
+    // Security (H1 rotation / M3 parity): issue the refresh token through the
+    // core helper so HAXiam gets a rotating family/jti refresh token and the
+    // centralized Secure/SameSite/HttpOnly cookie flags, matching normal login.
+    // Falls back to the legacy raw setcookie only if the helper is unavailable
+    // on an older core.
+    if (method_exists($HAXCMS, 'getRefreshToken') && method_exists($HAXCMS, 'setRefreshTokenCookie')) {
+      $HAXCMS->setRefreshTokenCookie($HAXCMS->getRefreshToken($IAM->enterprise->userVar));
+    }
+    else if (method_exists($HAXCMS, 'getRefreshToken')) {
       setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = false, $_httponly = true);
     }
   }
@@ -139,7 +147,12 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
     !isset($site)
   ) {
     $IAM->enterprise->userVar = $_SESSION['HAXIAM_USER'];
-    if (method_exists($HAXCMS, 'getRefreshToken')) {
+    // Security (H1 rotation / M3 parity): issue via the core helper so HAXiam
+    // gets a rotating family/jti refresh token + centralized cookie flags.
+    if (method_exists($HAXCMS, 'getRefreshToken') && method_exists($HAXCMS, 'setRefreshTokenCookie')) {
+      $HAXCMS->setRefreshTokenCookie($HAXCMS->getRefreshToken($IAM->enterprise->userVar));
+    }
+    else if (method_exists($HAXCMS, 'getRefreshToken')) {
       setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = false, $_httponly = true);
     }
   }
