@@ -48,6 +48,9 @@ class IAM {
     @symlink('../../cores/' . $core . '/haxcms-jwt.php', $userSitesDir . '/haxcms-jwt.php');
     @symlink('../../cores/' . $core . '/system', $userSitesDir . '/system');
     @symlink('../../cores/' . $core . '/.htaccess', $userSitesDir . '/.htaccess');
+    // wc-registry.json must resolve relative to the user sites directory so that
+    // site pages can preload it on the front-end; without this the browser fetch 404s
+    @symlink('../../cores/' . $core . '/wc-registry.json', $userSitesDir . '/wc-registry.json');
     // make a config directory
     @mkdir($userDir . '/_config', 0755, TRUE);
     @copy($userDir . '/system/boilerplate/systemsetup/userData.json', $userDir . '/_config/userData.json');
