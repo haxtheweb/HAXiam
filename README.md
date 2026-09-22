@@ -57,3 +57,33 @@ Recommended pattern: manage `_iamConfig/skeletons` as its own Git repository (or
 4. On each HAXiam deployment, run `git pull` in `_iamConfig/skeletons` to deploy template updates for all users.
 
 If you prefer tracking this in the main HAXiam repository, update `.gitignore` carefully so only `_iamConfig/skeletons` is versioned and other `_iamConfig` files remain ignored.
+
+## Vanity domains
+A "vanity domain" is a custom domain (e.g. `haxtheweb.org`) that serves a single site out of a HAXiam deployment, instead of being reached via `https://your-iam-domain/<user>/sites/<site>/`. `haxtheweb.org` itself is served this way and has always worked correctly because its vhost follows the pattern below.
+
+### The correct pattern
+When adding a new vanity domain, create an Apache vhost whose `DocumentRoot` points **directly at the site's real path** inside `users_sites` (never a separate shallow alias/symlink directory outside of it), and grant `AllowOverride All` on the shared `users_sites` root so the site's own `.htaccess` is honored. For example:
+```apache
+ServerAdmin webmaster@localhost
+ServerName <vanity-domain>
+DocumentRoot /var/www/oer/<iam-username>/sites/<site-machine-name>/
+SetEnv HAXSITE_BASE_URL /
+<Directory /var/www/oer/>
+        Options Indexes FollowSymLinks
+        Header set Access-Control-Allow-Origin "*"
+        AllowOverride All
+</Directory>
+```
+Key points:
+- `DocumentRoot` is the real `users_sites/<user>/sites/<site>/` path, not a separate symlinked directory elsewhere on disk (e.g. under a different vhost's docroot). Apache's `<Directory>` matching happens against the canonicalized (symlink-resolved) path, so directives attached to a shallow alias won't apply to the real target.
+- `SetEnv HAXSITE_BASE_URL /` tells HAXcms it's being served at the domain root instead of under `/<user>/sites/<site>/`, so the `<base>` tag and routing resolve correctly.
+- `AllowOverride All` must be granted on the shared `users_sites` root (not just the leaf site directory), so the site's own `.htaccess` pretty-URL rewrite rules are honored for deep links (e.g. `/some-page`), not just the homepage.
+
+### Generating a vhost stanza
+Use `scripts/utilities/vanity-domain-vhost.sh` to print a ready-to-review vhost stanza following this pattern for any existing user/site:
+```bash
+bash scripts/utilities/vanity-domain-vhost.sh <iam-username> <site-machine-name> <vanity-domain> [ssl-cert-path] [ssl-key-path]
+```
+This only prints the suggested stanza to the console - it does not write any file or touch your live Apache configuration. Review the output, adjust SSL paths as needed, then add it to your own vhost file (e.g. `/etc/apache2/sites-available/<domain>.conf`) and enable/reload Apache yourself.
+
+After enabling, verify both the homepage and a deep link resolve dynamically (e.g. `https://<domain>/` and `https://<domain>/some-page`).
