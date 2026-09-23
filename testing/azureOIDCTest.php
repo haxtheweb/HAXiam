@@ -342,6 +342,39 @@ try {
     $composerJson = dirname(__DIR__) . '/composer.json';
     check(file_exists($composerJson), 'composer.json is shipped (vendor/ is git-ignored)', $passes, $failures);
 
+    // Review fix #17: no-arg load() must resolve to the HAXiam root's
+    // _iamConfig/azure.json, not system/_iamConfig/azure.json.
+    // defaultConfigPath() uses dirname(__DIR__, 2) from system/lib/ which
+    // gives the HAXiam root. We verify by checking the path ends with
+    // the correct relative location.
+    $expectedSuffix = '/_iamConfig/azure.json';
+    $reflection = new ReflectionMethod('AzureOIDC', 'defaultConfigPath');
+    $reflection->setAccessible(true);
+    $defaultPath = $reflection->invoke(null);
+    check(
+        substr($defaultPath, -strlen($expectedSuffix)) === $expectedSuffix,
+        'AzureOIDC::defaultConfigPath returns a path ending in /_iamConfig/azure.json',
+        $passes,
+        $failures
+    );
+    // The path should NOT contain 'system/_iamConfig' (the old buggy path).
+    check(
+        strpos($defaultPath, 'system/_iamConfig') === false,
+        'AzureOIDC::defaultConfigPath does NOT resolve to system/_iamConfig (old bug)',
+        $passes,
+        $failures
+    );
+
+    // Review fix #1: composer.json has an autoload classmap for system/lib/.
+    $composerData = json_decode(file_get_contents($composerJson), true);
+    check(
+        isset($composerData['autoload']['classmap']) &&
+        in_array('system/lib/', $composerData['autoload']['classmap']),
+        'composer.json has autoload classmap for system/lib/ (AzureOIDC loadable via composer)',
+        $passes,
+        $failures
+    );
+
     // Reset test seams between runs.
     AzureOIDC::resetJwksHttpFetcher();
     AzureOIDC::resetIdTokenVerifier();

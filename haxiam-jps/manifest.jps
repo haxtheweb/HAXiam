@@ -92,13 +92,6 @@ settings:
           caption: "Public domain for Azure redirect URI (auto-detect if blank)"
           default: ""
 
-    - name: localStorageLimit
-      type: integer
-      caption: "Local storage limit (GB)"
-      default: 20
-      min: 1
-      max: 1024
-
 # -----------------------------------------------------------------------------
 # Actions — the ordered sequence described in
 # /_contracts/installer_flag_surface.md.
@@ -139,45 +132,8 @@ actions:
       AZ_CLIENT:        ${settings.azureClientId}
       AZ_SECRET:        ${settings.azureClientSecret}
       AZ_DOMAIN:        ${settings.azureRedirectDomain}
-      LOCAL_STORAGE_LIMIT_GB: ${settings.localStorageLimit}
 
-  # 3. setupUser. Runs three small steps glued back-to-back:
-  #    (a) drop a token that install.php will validate server-side;
-  #    (b) POST user + passphrase + install_token to advance to step 4;
-  #    (c) rm the token so it's never on disk for longer than the POST.
-  - name: setupUser_dropInstallToken
-    script: install-token.sh
-    setEnv:
-      HAX_INSTALL_TOKEN: ${response}
-
-  - name: setupUser_advanceInstall
-    cmd[cp]: |
-      set -eu
-      IAM_DIR="${HAX_HAXIAM_DIR:-/var/www/iam}"
-      TOKEN=$(cat "${IAM_DIR}/_installtoken.txt")
-      # The unified installer's install.php lives in this same webroot
-      # (default: /var/www/iam/install.php) so 127.0.0.1 is enough; we
-      # also try hostname -I as a fallback for ALT webroot layouts.
-      TARGET="http://127.0.0.1/install.php?op=advance&toStep=4"
-      if ! curl -fsS -m 30 -o /dev/null "$TARGET"; then
-        HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-        [ -n "$HOST_IP" ] && TARGET="http://${HOST_IP}/install.php?op=advance&toStep=4"
-      fi
-      RESP=$(curl -sS -m 60 \
-        -d "user=${HAX_ADMIN_USER}" \
-        -d "passphrase=${HAX_ADMIN_PASS}" \
-        -d "install_token=${TOKEN}" \
-        "$TARGET")
-      echo "[jps] install.php response: ${RESP}"
-      if printf '%s' "${RESP}" | grep -qiE 'fail|error|invalid|expired'; then
-        echo "[jps] install.php advance failed: ${RESP}" 1>&2
-        exit 1
-      fi
-
-  - name: setupUser_cleanupInstallToken
-    cmd[cp]: bash -c 'sudo rm -f /var/www/iam/_installtoken.txt'
-
-  # 4. installLE. Only when Skip Let's Encrypt was UNCHECKED. Hand off to
+  # 3. installLE. Only when Skip Let's Encrypt was UNCHECKED. Hand off to
   #    the community lets-encrypt JPS on env.domain.
   - if: '${settings.skipLE} == "false"'
     name: installLE
@@ -187,7 +143,7 @@ actions:
     setAddonEnv:
       env_domain: ${env.domain}
 
-  # 5. configureAzure. Only when Configure Azure AD SSO was CHECKED.
+  # 4. configureAzure. Only when Configure Azure AD SSO was CHECKED.
   #    Writes _iamConfig/azure.json verbatim to the locked schema, sets
   #    0600, then runs scripts/utilities/check-azure-sso.sh which the
   #    azure-oidc child owns.
@@ -210,18 +166,13 @@ actions:
       ISSUER="https://login.microsoftonline.com/${TENANT}/v2.0"
       SCOPES="openid profile email"
 
-      {
-        printf '{\n'
-        printf '    "enabled": true,\n'
-        printf '    "tenantId": "%s",\n'        "$TENANT"
-        printf '    "clientId": "%s",\n'        "$CLIENT"
-        printf '    "clientSecret": "%s",\n'    "$SECRET"
-        printf '    "redirectUri": "%s",\n'     "$REDIRECT_URI"
-        printf '    "issuer": "%s",\n'          "$ISSUER"
-        printf '    "scopes": "%s",\n'          "$SCOPES"
-        printf '    "providerClass": "AzureOIDC"\n'
-        printf '}\n'
-      } > "${IAM_DIR}/_iamConfig/azure.json"
+      # Use python3 -c with json.dump for proper JSON escaping — printf
+      # '%s' would produce malformed JSON if a secret contains " \ or
+      # control chars. A one-liner avoids YAML/heredoc indentation issues.
+      AZ_TENANT_VAL="$TENANT" AZ_CLIENT_VAL="$CLIENT" AZ_SECRET_VAL="$SECRET" \
+        REDIRECT_VAL="$REDIRECT_URI" ISSUER_VAL="$ISSUER" SCOPES_VAL="$SCOPES" \
+        JSON_FILE="${IAM_DIR}/_iamConfig/azure.json" \
+        python3 -c 'import json,os; d={"enabled":True,"tenantId":os.environ["AZ_TENANT_VAL"],"clientId":os.environ["AZ_CLIENT_VAL"],"clientSecret":os.environ["AZ_SECRET_VAL"],"redirectUri":os.environ["REDIRECT_VAL"],"issuer":os.environ["ISSUER_VAL"],"scopes":os.environ["SCOPES_VAL"],"providerClass":"AzureOIDC"}; f=open(os.environ["JSON_FILE"],"w"); json.dump(d,f,indent=4); f.write(chr(10)); f.close()'
       chmod 0600 "${IAM_DIR}/_iamConfig/azure.json"
 
       # Validation utility owned by the azure-oidc child.
@@ -238,5 +189,5 @@ actions:
 
 success:
   color: green
-  message: "{{ANSI_GREEN}}HAXiam installed.{{ANSI_RESET}}\n\nAdmin URL:\n  https://${env.domain}/\nUsername:\n  ${globals.HAX_ADMIN_USER}\nPassword:\n  ${globals.HAX_ADMIN_PASS}\n"
+  message: "{{ANSI_GREEN}}HAXiam installed.{{ANSI_RESET}}\n\nAdmin URL:\n  https://${env.domain}/\nUsername:\n  ${globals.HAX_ADMIN_USER}\nPassword:\n  ${globals.HAX_ADMIN_PASS}\nAzure AD redirect URI (if SSO enabled):\n  https://${env.domain}/oauth-callback.php\n"
   attachToPHPLink: false

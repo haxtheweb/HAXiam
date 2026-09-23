@@ -17,7 +17,7 @@
 #   5. Optional LE / cert     failed -> exit 6  (skip if --skip-le / unset)
 #   6. Optional Azure config  failed -> exit 5  (skip if no Azure flags)
 #   7. Config-change ledger   uses scripts/utilities/install-ledger.sh
-#   8. Permissions hardening  scoped to _iamConfig/users + _iamConfig/users_sites only
+#   8. Permissions hardening  scoped to ${HA_DIR}/users + ${HA_DIR}/users_sites (where IAM::liberate creates them)
 
 set -e
 set -o pipefail
@@ -139,6 +139,11 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# cd to the install root so all relative paths (_iamConfig/, cores/, etc.)
+# resolve against --ha, not the repo root the script was invoked from.
+# LEDGER and AZURE_CHECK are already absolute (${DIR}/../utilities/...).
+cd "${HA_DIR}"
+
 # ---------------------------------------------------------------------------
 # PHASE 1 - pre-flight. OS match, disk space, network probe.
 # ---------------------------------------------------------------------------
@@ -171,14 +176,17 @@ RESOLVED_DISTRO="$(resolve_distro)" || exit 1
 install_green "Distro: ${RESOLVED_DISTRO}"
 
 case "${RESOLVED_DISTRO}" in
-  ubuntu-20.04) PHP_FPM="php7.4-fpm"; PHP_PKGS="php7.4-fpm php7.4-zip php7.4-gd php-dom php7.4-mbstring php7.4-yaml" ;;
+  # Ubuntu 20.04's default repos only have PHP 7.4, but composer.json
+  # requires ^8.1. We install php8.1 from the ondrej/php PPA (added in
+  # phase 2 before apt-get install).
+  ubuntu-20.04) PHP_FPM="php8.1-fpm"; PHP_PKGS="php8.1-fpm php8.1-zip php8.1-gd php8.1-dom php8.1-mbstring php8.1-yaml" ;;
   ubuntu-22.04) PHP_FPM="php8.1-fpm"; PHP_PKGS="php8.1-fpm php8.1-zip php8.1-gd php8.1-dom php8.1-mbstring php8.1-yaml" ;;
   ubuntu-24.04) PHP_FPM="php8.3-fpm"; PHP_PKGS="php8.3-fpm php8.3-zip php8.3-gd php8.3-dom php8.3-mbstring php8.3-yaml" ;;
   ubuntu-26.04) PHP_FPM="php8.5-fpm"; PHP_PKGS="php8.5-fpm php8.5-zip php8.5-gd php8.5-dom php8.5-mbstring php8.5-yaml" ;;
 esac
 
 # Disk space - need at least 2 GB free for HAXcms-core + HAXiam + vendor.
-AVAIL_MB="$(df -Pm "${DIR}/../../" 2>/dev/null | awk 'NR==2 {print $4}')"
+AVAIL_MB="$(df -Pm "${HA_DIR}" 2>/dev/null | awk 'NR==2 {print $4}')"
 if [[ -z "${AVAIL_MB}" || ${AVAIL_MB:-0} -lt 2048 ]]; then
   install_red "Pre-flight failed: only ${AVAIL_MB:-?} MB free; HAXiam needs >= 2048 MB."
   exit 1
@@ -193,7 +201,7 @@ HAXCMS_DIR="${HA_DIR}/cores/HAXcms-1.x.x"
 HAXCMS_CORE="HAXcms-1.x.x"
 WWW_USER="www-data"
 WEB_GROUP="www-data"
-CONFIG_FILE="_iamConfig/config.cfg"
+CONFIG_FILE="${HA_DIR}/_iamConfig/config.cfg"
 
 if [[ -f "${CONFIG_FILE}" ]]; then
   # Source only the haxiam= line check first to decide if this is "existing".
@@ -210,7 +218,7 @@ if [[ -f "${CONFIG_FILE}" ]]; then
   fi
 fi
 
-mkdir -p _iamConfig
+mkdir -p "${HA_DIR}/_iamConfig"
 if [[ ! -f "${CONFIG_FILE}" ]]; then
   # First-time write of config.cfg (no existing haxiam= line yet).
   bash "${LEDGER}" ran "phase3:writing ${CONFIG_FILE}"
@@ -240,6 +248,11 @@ for p in ${PHP_PKGS} apache2 git brotli certbot python3-certbot-apache ${PHP_FPM
 done
 
 if [[ ${PKG_NEEDED} -eq 1 ]]; then
+  # Ubuntu 20.04 needs the ondrej/php PPA for php8.1-* packages.
+  if [[ "${RESOLVED_DISTRO}" == "ubuntu-20.04" ]]; then
+    apt-get install -y software-properties-common || true
+    add-apt-repository -y ppa:ondrej/php || true
+  fi
   apt-get update
   apt-get install -y ${PHP_PKGS} apache2 git brotli certbot python3-certbot-apache ${PHP_FPM} \
     || { install_red "apt-get install failed"; exit 2; }
@@ -264,9 +277,9 @@ a2enconf http2 >/dev/null 2>&1 || true
 # ---------------------------------------------------------------------------
 install_bold "[3/8] HAXiam bootstrap"
 
-mkdir -p _iamConfig/tmp _iamConfig/assets _iamConfig/skeletons _iamConfig/snapshots
-for d in _iamConfig/tmp _iamConfig/assets _iamConfig/skeletons _iamConfig/snapshots; do
-  if [[ ! -f "_iamConfig/install_manifest.txt" ]]; then
+mkdir -p "${HA_DIR}/_iamConfig/tmp" "${HA_DIR}/_iamConfig/assets" "${HA_DIR}/_iamConfig/skeletons" "${HA_DIR}/_iamConfig/snapshots"
+for d in "${HA_DIR}/_iamConfig/tmp" "${HA_DIR}/_iamConfig/assets" "${HA_DIR}/_iamConfig/skeletons" "${HA_DIR}/_iamConfig/snapshots"; do
+  if [[ ! -f "${HA_DIR}/_iamConfig/install_manifest.txt" ]]; then
     bash "${LEDGER}" added "${d}/"
   fi
 done
@@ -274,7 +287,7 @@ done
 # SYSTEM_VERSION.txt advance only if it equals the new code version.
 SRC_VERSION=""
 if [[ -f .version ]]; then SRC_VERSION=$(<.version); elif [[ -f VERSION.txt ]]; then SRC_VERSION=$(<VERSION.txt); fi
-SYS_VERSION_FILE="_iamConfig/SYSTEM_VERSION.txt"
+SYS_VERSION_FILE="${HA_DIR}/_iamConfig/SYSTEM_VERSION.txt"
 if [[ -f "${SYS_VERSION_FILE}" ]]; then
   cur="$(<"${SYS_VERSION_FILE}")"
   if [[ "${cur}" != "${SRC_VERSION}" ]]; then
@@ -293,7 +306,10 @@ if [[ ! -d "${HAXCMS_DIR}" ]]; then
   install_green "Cloning ${HAXCMS_CORE}..."
   mkdir -p cores
   cd cores
-  git clone https://github.com/haxtheweb/haxcms-php.git "${HAXCMS_CORE}"
+  git clone https://github.com/haxtheweb/haxcms-php.git "${HAXCMS_CORE}" || {
+    install_red "git clone of ${HAXCMS_CORE} failed."
+    exit 3
+  }
   cd "${HAXCMS_CORE}"
 else
   install_green "${HAXCMS_DIR} already present - skipping clone."
@@ -415,8 +431,29 @@ elif [[ -n "${CERT_PATH}" && -n "${KEY_PATH}" ]]; then
   if [[ ! -r "${KEY_PATH}" ]]; then
     install_red "--key path ${KEY_PATH} unreadable."; exit 6
   fi
-  install_green "Existing cert at ${CERT_PATH} (will be referenced by the vhost template)."
-  WROTE_ANY="yes"
+  # Wire the cert/key into an Apache SSL vhost so the web server
+  # actually uses them (review fix #8 — previously validated but never
+  # wired in). The vhost uses the cert/key paths verbatim.
+  VHOST_CONF="/etc/apache2/sites-available/haxiam-ssl.conf"
+  cat > "${VHOST_CONF}" <<SSLVHOST
+<VirtualHost *:443>
+    ServerAdmin webmaster@localhost
+    DocumentRoot ${HA_DIR}
+    SSLEngine on
+    SSLCertificateFile ${CERT_PATH}
+    SSLCertificateKeyFile ${KEY_PATH}
+    <Directory ${HA_DIR}/>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+    Protocols h2 http/1.1
+</VirtualHost>
+SSLVHOST
+    a2enmod ssl >/dev/null 2>&1 || true
+    a2ensite haxiam-ssl >/dev/null 2>&1 || true
+    install_green "SSL vhost configured with ${CERT_PATH} / ${KEY_PATH}."
+    WROTE_ANY="yes"
 else
   install_green "Skipping TLS phase (--skip-le / no cert)."
 fi
@@ -519,23 +556,27 @@ install_green "Ledger updated at _iamConfig/install_manifest.txt."
 install_bold "[8/8] Permissions"
 wwwuser="${wwwuser:-www-data}"
 webgroup="${webgroup:-www-data}"
-if [[ -d _iamConfig/users ]]; then
-  find _iamConfig/users -maxdepth 1 -mindepth 1 -type d | while read -r d; do
+# IAM::liberate() creates accounts under ${HA_DIR}/users and
+# ${HA_DIR}/users_sites (see system/lib/IAM.php), NOT under _iamConfig/.
+# The previous code searched _iamConfig/users which never contains the
+# live accounts, so the hardening was a no-op (review fix #7).
+if [[ -d "${HA_DIR}/users" ]]; then
+  find "${HA_DIR}/users" -maxdepth 1 -mindepth 1 -type d | while read -r d; do
     chown "${wwwuser}:${webgroup}" "$d"
     chmod 2755 "$d"
   done
 fi
-if [[ -d _iamConfig/users_sites ]]; then
-  find _iamConfig/users_sites -maxdepth 1 -mindepth 1 -type d | while read -r d; do
+if [[ -d "${HA_DIR}/users_sites" ]]; then
+  find "${HA_DIR}/users_sites" -maxdepth 1 -mindepth 1 -type d | while read -r d; do
     chown "${wwwuser}:${webgroup}" "$d"
     chmod 2755 "$d"
   done
 fi
-if [[ -d _iamConfig/cache ]]; then
-  chown "${wwwuser}:${webgroup}" _iamConfig/cache
-  chmod 2755 _iamConfig/cache
+if [[ -d "${HA_DIR}/_iamConfig/cache" ]]; then
+  chown "${wwwuser}:${webgroup}" "${HA_DIR}/_iamConfig/cache"
+  chmod 2755 "${HA_DIR}/_iamConfig/cache"
 fi
-install_green "Permissions applied (scoped to _iamConfig/users|users_sites|cache only)."
+install_green "Permissions applied (scoped to ${HA_DIR}/users|users_sites|_iamConfig/cache only)."
 
 # ---------------------------------------------------------------------------
 # Final summary (invariant #6).

@@ -135,6 +135,17 @@ case "${az_full_exit}" in
     record_fail "full Azure flags exited ${az_full_exit}, expected 0 or 5" ;;
 esac
 
+# Unknown flag (--storage-limit-gb) must exit 1 (flag validation).
+# This verifies the fix for the JPS deploy-app.sh bug where
+# --storage-limit-gb was passed but the installer doesn't know it.
+unk_exit=0
+${DOCKER} run --rm -e TERM "${DOCKER_IMAGE_TAG}" one-shot --storage-limit-gb 10 >/tmp/haxiam-docker-unk.log 2>&1 || unk_exit=$?
+if [[ "${unk_exit}" == "1" ]]; then
+  record_pass "--storage-limit-gb (unknown flag) exits 1 (flag validation)"
+else
+  record_fail "--storage-limit-gb exited ${unk_exit}, expected 1"
+fi
+
 # ----------------------------------------------------------------------
 # 3. End-to-end install. Stage a writable copy of the repo under /tmp so
 # the installer's writes (and the idempotency restart in phase 4) work

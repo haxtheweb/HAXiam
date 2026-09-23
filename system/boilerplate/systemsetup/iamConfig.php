@@ -34,6 +34,13 @@ $IAM->enterprise->login = '/login.php';
 // placeholder). The legacy REMOTE_USER / PHP_AUTH_USER fallback block a
 // few lines down stays untouched so Shibboleth / Apache-module installs
 // keep working unchanged.
+// Load the AzureOIDC class so class_exists() can find it. composer.json
+// now has an autoload classmap for system/lib/, but vendor/ may not be
+// installed yet on a fresh checkout — include the class file explicitly
+// so the bridge works with OR without composer.
+if (!class_exists('AzureOIDC') && file_exists(IAM_ROOT . '/system/lib/AzureOIDC.php')) {
+  include_once IAM_ROOT . '/system/lib/AzureOIDC.php';
+}
 $azure_enabled_bridge = false;
 if (
   file_exists(IAM_ROOT . '/_iamConfig/azure.json') &&
@@ -70,7 +77,15 @@ if ($HAXCMS) {
 // and we deliberately DO NOT overwrite it from REMOTE_USER. Otherwise the legacy
 // REMOTE_USER / PHP_AUTH_USER fallback applies (Shibboleth / Apache module).
 if (!isset($_SESSION['HAXIAM_USER']) || $_SESSION['HAXIAM_USER'] == '') {
-  if (isset($_SERVER['REMOTE_USER'])) {
+  // When Azure OIDC is enabled, fail closed instead of importing REMOTE_USER
+  // / PHP_AUTH_USER — the contract (invariant #6) promises that an enabled
+  // Azure provider is the sole auth source. A stale REMOTE_USER from a
+  // Shibboleth/Apache module must NOT authenticate a different identity.
+  if ($azure_enabled_bridge) {
+    // Azure is enabled but no OIDC session — don't fall back; the downstream
+    // routing will redirect to login.php which kicks the Azure authorize flow.
+  }
+  else if (isset($_SERVER['REMOTE_USER'])) {
     $_SESSION['HAXIAM_USER'] = $_SERVER['REMOTE_USER'];
   }
   else if (isset($_SERVER['PHP_AUTH_USER'])) {

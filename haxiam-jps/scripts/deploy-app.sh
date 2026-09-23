@@ -51,34 +51,39 @@ else
   cd "${WEBROOT}"
 fi
 
-# 3. Installer flag vector.
+# 3. Installer flag vector — built as an argv array so values with
+# whitespace / glob chars pass through verbatim (no word splitting).
 INSTALLER="${WEBROOT}/scripts/install/haxiam-install.sh"
 if [ ! -f "${INSTALLER}" ]; then
   haxwarn "expected installer at ${INSTALLER}; branch ${BRANCH} may not have the unified installer yet"
   exit 3
 fi
 
-INSTALL_FLAGS="--distro auto --skip-le --non-interactive"
+INSTALL_ARGS=(--distro auto --skip-le --non-interactive --ha "${WEBROOT}")
 
 if [ "${AZURE_CONFIGURED:-false}" = "true" ]; then
   : "${AZ_TENANT:?deploy-app: AZURE_CONFIGURED=true but AZ_TENANT is unset}"
   : "${AZ_CLIENT:?deploy-app: AZURE_CONFIGURED=true but AZ_CLIENT is unset}"
   : "${AZ_SECRET:?deploy-app: AZURE_CONFIGURED=true but AZ_SECRET is unset}"
-  INSTALL_FLAGS="${INSTALL_FLAGS} --azure-tenant ${AZ_TENANT}"
-  INSTALL_FLAGS="${INSTALL_FLAGS} --azure-client ${AZ_CLIENT}"
-  INSTALL_FLAGS="${INSTALL_FLAGS} --azure-secret ${AZ_SECRET}"
+  INSTALL_ARGS+=(--azure-tenant "${AZ_TENANT}")
+  INSTALL_ARGS+=(--azure-client "${AZ_CLIENT}")
+  INSTALL_ARGS+=(--azure-secret "${AZ_SECRET}")
   if [ -n "${AZ_DOMAIN:-}" ]; then
-    INSTALL_FLAGS="${INSTALL_FLAGS} --azure-redirect-base https://${AZ_DOMAIN}"
+    INSTALL_ARGS+=(--azure-redirect-base "https://${AZ_DOMAIN}")
   fi
 fi
 
-if [ -n "${LOCAL_STORAGE_LIMIT_GB:-}" ]; then
-  INSTALL_FLAGS="${INSTALL_FLAGS} --storage-limit-gb ${LOCAL_STORAGE_LIMIT_GB}"
+# 4. Run the installer. Log a REDACTED command (never echo the secret —
+# the installer contract requires the secret is never written to logs).
+REDACTED_DISPLAY="--distro auto --skip-le --non-interactive --ha ${WEBROOT}"
+if [ "${AZURE_CONFIGURED:-false}" = "true" ]; then
+  REDACTED_DISPLAY="${REDACTED_DISPLAY} --azure-tenant ${AZ_TENANT} --azure-client ${AZ_CLIENT} --azure-secret <redacted>"
+  if [ -n "${AZ_DOMAIN:-}" ]; then
+    REDACTED_DISPLAY="${REDACTED_DISPLAY} --azure-redirect-base https://${AZ_DOMAIN}"
+  fi
 fi
-
-# 4. Run the installer.
-haxecho "deploy-app: running unified installer (Azure client secret redacted)"
-sudo bash "${INSTALLER}" ${INSTALL_FLAGS}
+haxecho "deploy-app: bash ${INSTALLER} ${REDACTED_DISPLAY}"
+sudo bash "${INSTALLER}" "${INSTALL_ARGS[@]}"
 
 # 5. Composer fallback if the installer didn't already vendor in.
 if [ ! -f "${WEBROOT}/vendor/autoload.php" ]; then

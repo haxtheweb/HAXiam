@@ -105,12 +105,14 @@ class AzureOIDC
         $this->path = null;
     }
 
-    // Walks up from system/lib/AzureOIDC.php to find _iamConfig/azure.json.
-    // For installs with a non-standard layout iamConfig.php / oauth-callback.php
-    // pass an explicit path; this fallback is just a convenience.
+    // Walks up from system/lib/AzureOIDC.php to the HAXiam root to find
+    // _iamConfig/azure.json. dirname(__DIR__, 2) goes from system/lib/ to
+    // the HAXiam root (two levels up). For installs with a non-standard
+    // layout iamConfig.php / oauth-callback.php pass an explicit path;
+    // this fallback is just a convenience.
     private static function defaultConfigPath()
     {
-        return dirname(__DIR__) . '/_iamConfig/azure.json';
+        return dirname(__DIR__, 2) . '/_iamConfig/azure.json';
     }
 
     /**

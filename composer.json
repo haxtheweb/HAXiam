@@ -10,5 +10,8 @@
     },
     "config": {
         "sort-packages": true
+    },
+    "autoload": {
+        "classmap": ["system/lib/"]
     }
 }

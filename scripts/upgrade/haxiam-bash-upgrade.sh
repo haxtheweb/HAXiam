@@ -121,7 +121,7 @@ write_snapshot_manifest() {
   # $1 = sub-dir inside the snapshot (pre or per-script)
   local sub="$1"
   local dir="${SNAPSHOT_DIR}/${sub}"
-  mkdir -p "${dir}"
+  mkdir -p "${dir}/files"
   local man="${dir}/manifest.txt"
   : > "${man}"
   while IFS= read -r -d '' f; do
@@ -129,6 +129,9 @@ write_snapshot_manifest() {
     local sha
     sha="$(sha256sum "${f}" | awk '{print $1}')"
     printf '%s  %s\n' "${sha}" "${rel}" >> "${man}"
+    # Copy the file so the snapshot can replay/restore state, not just
+    # verify integrity via hash (review fix #19).
+    cp -p "${f}" "${dir}/files/${rel}" 2>/dev/null || true
   done < <(find "${haxiam}/_iamConfig" -maxdepth 1 -type f -print0 2>/dev/null)
   echo "${man}"
 }
@@ -221,18 +224,22 @@ for upgrade in "${systemupgrades[@]}"; do
   fi
 done
 
-echo "${code_version}" > "${system_version_file}"
-
 # ----------------------------------------------------------------------
-# 7. Post-upgrade HTTP health check. Non-5xx is "ok"; 5xx aborts.
+# 7. Post-upgrade HTTP health check. Non-5xx is "ok"; 5xx or curl
+# failure (code 000) aborts. The version is NOT advanced until the
+# health check passes, so a retry will re-run the upgrade scripts if
+# the deployment was declared unhealthy (review fix #9 + #10).
 # ----------------------------------------------------------------------
 upgrade_green "Bash based upgrade complete - running health check."
 HEALTH_URL="https://${domain:-localhost}/"
 HEALTH_CODE="$(curl --silent --output /dev/null --max-time 8 -L \
   -k "${HEALTH_URL}" -w '%{http_code}' || echo 000)"
-if [[ "${HEALTH_CODE}" =~ ^5 ]]; then
+if [[ "${HEALTH_CODE}" == "000" || "${HEALTH_CODE}" =~ ^5 ]]; then
   upgrade_red "Post-upgrade health check FAILED: ${HEALTH_URL} returned ${HEALTH_CODE}."
   upgrade_red "Snapshots preserved under ${SNAPSHOT_DIR}; see upgrade_history.txt."
   exit 1
 fi
+# Health check passed — NOW advance the system version so a retry of a
+# failed upgrade would NOT skip these scripts.
+echo "${code_version}" > "${system_version_file}"
 upgrade_green "Post-upgrade health check ok: HTTP ${HEALTH_CODE} from ${HEALTH_URL}."
