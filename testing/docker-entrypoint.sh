@@ -31,7 +31,17 @@ fi
 
 case "${1:-serve}" in
   serve)
-    if ! grep -Eq '^[[:space:]]*haxiam[[:space:]]*=' /var/www/iam/_iamConfig/config.cfg 2>/dev/null; then
+    # Idempotency predicate: only skip the installer if config.cfg has a
+    # haxiam= line AND the core checkout + IAM marker exist. A partial
+    # install (config.cfg written but clone/bootstrap failed) must re-run
+    # (review fix #7).
+    NEEDS_INSTALL=1
+    if grep -Eq '^[[:space:]]*haxiam[[:space:]]*=' /var/www/iam/_iamConfig/config.cfg 2>/dev/null \
+      && [[ -d /var/www/iam/cores/HAXcms-1.x.x ]] \
+      && [[ -f /var/www/iam/cores/HAXcms-1.x.x/_config/IAM ]]; then
+      NEEDS_INSTALL=0
+    fi
+    if [[ ${NEEDS_INSTALL} -eq 1 ]]; then
       echo '[haxiam-docker-entrypoint] First start — running installer'
       bash /var/www/iam/scripts/install/haxiam-install.sh --distro auto --skip-le --non-interactive
     else

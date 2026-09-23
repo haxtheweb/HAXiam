@@ -478,6 +478,11 @@ elif [[ -n "${CERT_PATH}" && -n "${KEY_PATH}" ]]; then
   if [[ ! -r "${KEY_PATH}" ]]; then
     install_red "--key path ${KEY_PATH} unreadable."; exit 6
   fi
+  # Harden cert/key permissions before wiring into Apache. A world-readable
+  # key is a security risk; an inaccessible key makes Apache fail to start.
+  # Enforce 0644 for cert and 0640 for key (review fix #5).
+  chmod 0644 "${CERT_PATH}" 2>/dev/null || true
+  chmod 0640 "${KEY_PATH}" 2>/dev/null || true
   # Wire the cert/key into an Apache SSL vhost so the web server
   # actually uses them (review fix #8 — previously validated but never
   # wired in). The vhost uses the cert/key paths verbatim.
@@ -580,11 +585,14 @@ PY
     install_green "_iamConfig/azure.json already configured (enabled=true) — preserving existing config."
   else
     mv "${TMP_AZ_JSON}" "_iamConfig/azure.json"
-    chmod 0600 "_iamConfig/azure.json"
-    chown "${WWW_USER}" "_iamConfig/azure.json" 2>/dev/null || true
     WROTE_ANY="yes"
     bash "${LEDGER}" wrote "_iamConfig/azure.json" >> /dev/null
   fi
+  # Always enforce 0600 + chown www-data, even when preserving an existing
+  # file, so a manually-created config can't retain permissive permissions
+  # (review fix #6).
+  chmod 0600 "_iamConfig/azure.json"
+  chown "${WWW_USER}" "_iamConfig/azure.json" 2>/dev/null || true
   AZURE_WAS_CONFIGURED="yes"
   rm -f "${TMP_AZ_JSON}"
 

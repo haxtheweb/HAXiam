@@ -60,11 +60,15 @@ hooks:
   # subsequent runs.
   post-start:
   - exec: |
+      # DDEV's web container is Debian-based, but the installer only
+      # supports Ubuntu. The DDEV web image is Ubuntu-derived for the
+      # apache-fpm stack, so --distro auto should resolve correctly.
+      # If it doesn't, fall back to --distro ubuntu-24.04.
       # DDEV mounts the project at /var/www/html, not /var/www/iam.
       # Use --ha /var/www/html so the installer targets the DDEV app root.
       if ! grep -Eq '^[[:space:]]*haxiam[[:space:]]*=' /var/www/html/_iamConfig/config.cfg 2>/dev/null; then
         echo "[.ddev] First start — running scripts/install/haxiam-install.sh"
-        sudo bash /var/www/html/scripts/install/haxiam-install.sh --distro auto --skip-le --non-interactive --ha /var/www/html
+        sudo bash /var/www/html/scripts/install/haxiam-install.sh --distro ubuntu-24.04 --skip-le --non-interactive --ha /var/www/html
       else
         echo "[.ddev] Existing install detected at /var/www/html — skipping installer."
       fi

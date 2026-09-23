@@ -60,13 +60,15 @@ $user = getenv("HAX_ADMIN_USER_VAL");
 $pass = getenv("HAX_ADMIN_PASS_VAL");
 // Use preg_replace_callback with var_export so passwords containing
 // quotes, backslashes, $1, etc. are safely escaped (review fix #5).
+// In PHP double-quoted strings, \\$HAXCMS interpolates the variable.
+// Use \$HAXCMS to get a literal $ in the regex (review fix #3).
 $c = preg_replace_callback(
-    "/(\\$HAXCMS->superUser->name = )\x27[^\x27]*\x27;/",
+    "/(\$HAXCMS->superUser->name = )\x27[^\x27]*\x27;/",
     function($m) use ($user) { return $m[1] . var_export($user, true) . ";"; },
     $c
 );
 $c = preg_replace_callback(
-    "/(\\$HAXCMS->superUser->password = )\x27[^\x27]*\x27;/",
+    "/(\$HAXCMS->superUser->password = )\x27[^\x27]*\x27;/",
     function($m) use ($pass) { return $m[1] . var_export($pass, true) . ";"; },
     $c
 );

@@ -92,9 +92,12 @@ echo "=== 2/4 Flag surface ==="
 # Capture output first, then grep, so pipefail doesn't cause a false
 # failure when grep exits early and tee gets SIGPIPE (review
 # previously-missed #3).
+# Capture the exit status separately so a broken --help that prints the
+# flag but exits non-zero is caught (review fix #8).
+help_exit=0
 ${DOCKER} run --rm -e TERM "${DOCKER_IMAGE_TAG}" \
-      one-shot --help > /tmp/haxiam-docker-help.log 2>&1 || true
-if grep -q -- "--azure-redirect-base" /tmp/haxiam-docker-help.log; then
+      one-shot --help > /tmp/haxiam-docker-help.log 2>&1 || help_exit=$?
+if [[ ${help_exit} -eq 0 ]] && grep -q -- "--azure-redirect-base" /tmp/haxiam-docker-help.log; then
   record_pass "--help exits 0 and mentions --azure-redirect-base"
 else
   record_fail "--help didn't mention --azure-redirect-base"

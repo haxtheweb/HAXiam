@@ -12,9 +12,9 @@ and then hands off to the unified installer
 
 | Step | Action            | Notes                                                                                          |
 | ---- | ----------------- | ---------------------------------------------------------------------------------------------- |
-| 1    | `configSystem`    | `apt-get install php8.3-{fpm,zip,gd,dom,mbstring,yaml} apache2 brotli git` + a2enmod/a2enconf. |
+| 1    | `configSystem`    | `apt-get install php8.3-{fpm,zip,gd,xml,curl,mbstring,yaml} apache2 brotli git` + a2enmod/a2enconf. |
 | 2    | `deployApp`       | Clones HAXiam into the cp webroot (`$gh` / `/home/jelastic/webapp/ROOT/web` / `/var/www/iam`). Then runs `haxiam-install.sh --distro auto --skip-le --non-interactive`. Composes `--azure-*` flags when the SSO checkbox is on. Falls back to `composer install` only if the installer hasn't already produced `vendor/`. |
-| 3    | `setupUser`       | Drops a fresh GUID token to `/var/www/iam/_installtoken.txt` (chmod 0600), POSTs `user + passphrase + install_token` to `install.php?op=advance&toStep=4`, then removes the file. The admin password never persists past this step — it's only available via the JPS global `HAX_ADMIN_PASS` for the success message. |
+| 3    | `setupUser`       | Applies the hosting-provider-supplied admin credentials (`HAX_ADMIN_USER` / `HAX_ADMIN_PASS` globals) to the HAXcms core's `_config/config.php` superUser fields, overriding the random uuidgen credentials the installer generated. Uses PHP `preg_replace_callback` + `var_export` for safe string replacement. |
 | 4    | `installLE`       | Only when *Skip Let's Encrypt* was unchecked. Calls Jelastic's `installAddon` for the community `lets-encrypt` JPS targeting `env.domain`. |
 | 5    | `configureAzure`  | Only when *Configure Azure AD SSO* was checked. Writes `_iamConfig/azure.json` per `_contracts/azure_json_schema.md` (chmod 0600, `clientSecret` never echoed) and runs the validation utility `scripts/utilities/check-azure-sso.sh`. |
 
@@ -26,7 +26,7 @@ haxiam-jps/
 ├── manifest.jps           the JPS itself (YAML, Jelastic-recognised)
 └── scripts/
     ├── deploy-app.sh       clone + run the unified installer
-    └── install-token.sh    mint GUID, write _installtoken.txt, print to stdout
+    └── setup-user.sh       apply JPS admin credentials to HAXcms config.php
 ```
 
 Nothing else in the HAXiam tree is owned or modified by this child.
@@ -48,8 +48,6 @@ At install time the form looks like this:
 │              Client Secret      [•••••••••• (password)]      │
 │              Redirect Domain    [_______________________]    │
 │                                                              │
-│  Local storage limit (GB)   [   20  ]                        │
-│                                                              │
 │  [  Install HAXiam  ]                                        │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -60,8 +58,6 @@ At install time the form looks like this:
   (`Tenant ID`, `Client ID`, `Client Secret`) are independently required
   when visible. The secret is typed as `password` and is stored encrypted at
   rest by Jelastic's settings storage.
-- `Local storage limit` is an integer, default `20` GB.
-
 ## After install — Azure redirect URI registration
 
 When the Azure AD SSO checkbox was ticked at install time, JPS prints the
@@ -117,8 +113,9 @@ sudo bash /var/www/iam/scripts/haxiam.sh
   inline JSON; the Azure config file is written by an in-manifest bash
   step, not via `writeFile`, to keep secrets behind `set -eu` and a real
   `chmod 0600`.
-- `scripts/install-token.sh` prints only the bare GUID to stdout; all
-  chatter goes to stderr so the next JPS action captures a clean token.
+- `scripts/setup-user.sh` uses PHP `preg_replace_callback` with `var_export`
+  to safely update the superUser credentials in `_config/config.php`, handling
+  passwords with quotes, backslashes, and dollar signs without injection.
 - `scripts/deploy-app.sh` mirrors the colour idiom of `scripts/haxiam.sh`
   (`txtbld`/`bldgrn`/`bldred`/`txtreset` + `haxecho`/`haxwarn`) but sends
   to stderr so Jelastic's install-log capture isn't polluted.

@@ -131,7 +131,7 @@ actions:
       fi
       apt-get update
       apt-get install -y \
-        php8.3-fpm php8.3-zip php8.3-gd php8.3-dom php8.3-mbstring php8.3-yaml \
+        php8.3-fpm php8.3-zip php8.3-gd php8.3-xml php8.3-curl php8.3-mbstring php8.3-yaml \
         apache2 brotli git
       a2enmod proxy_fcgi mpm_event http2 ssl rewrite headers brotli
       a2dismod mpm_prefork status
