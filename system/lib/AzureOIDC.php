@@ -29,7 +29,11 @@
  *      than pull in a sub-provider package like thenetninja/oauth2-microsoft
  *      — fewer composer dependencies, same behaviour. If the user later wants
  *      v1 endpoints, swap the URL prefix in buildAuthorizationUrl().)
- *   - firebase/php-jwt ^6.10       → Firebase\JWT\JWT + Firebase\JWT\JWK
+ *   - firebase/php-jwt ^7.0        → Firebase\JWT\JWT + Firebase\JWT\JWK
+ *     (^7.0 required: CVE-2025-45769 / GHSA-2x45-7fc3-mxwq affects all
+ *      versions <7.0.0 and composer refuses to resolve advisory-blocked
+ *      packages; the v7 API for JWT::$leeway / JWK::parseKeySet / JWT::decode
+ *      is unchanged from v6.)
  *
  * Test seams (these are intentional, not workarounds):
  *   - setJwksHttpFetcher()  → swap the JWKS GET (testing/azureOIDCTest.php uses
