@@ -328,16 +328,23 @@ copy_if_absent "${HAXCMS_DIR}/system/boilerplate/systemsetup/userData.json" "_ia
 copy_if_absent "${HAXCMS_DIR}/_config/my-custom-elements.js" "_iamConfig/my-custom-elements.js"
 copy_if_absent "${HAXCMS_DIR}/_config/.htaccess"            "_iamConfig/.htaccess"
 copy_if_absent "${HAXCMS_DIR}/_config/SALT.txt"             "_iamConfig/SALT.txt"
-copy_if_absent "${HAXCMS_DIR}/system/boilerplate/systemsetup/HAXcmsConfig.php" "_iamConfig/HAXcmsConfig.php"
-copy_if_absent "${HAXCMS_DIR}/system/boilerplate/systemsetup/iamConfig.php"    "_iamConfig/iamConfig.php"
+# HAXiam-specific boilerplate (iamConfig.php, HAXcmsConfig.php, azure.json)
+# lives in HAXiam's OWN system/boilerplate/systemsetup/, NOT in the cloned
+# core. The core (haxcms-php) ships config.json/userData.json/SALT.txt under
+# its _config/ + system/boilerplate/, but NOT these IAM integration files —
+# copying them from ${HAXCMS_DIR} silently no-ops (copy_if_absent's -f guard
+# is false) and leaves _iamConfig/iamConfig.php missing, which 500s the site
+# (Undefined constant IAM_PROTOCOL). Source from the install root instead.
+copy_if_absent "${HA_DIR}/system/boilerplate/systemsetup/HAXcmsConfig.php" "_iamConfig/HAXcmsConfig.php"
+copy_if_absent "${HA_DIR}/system/boilerplate/systemsetup/iamConfig.php"    "_iamConfig/iamConfig.php"
 
 if [[ ! -f "_iamConfig/azure.json" ]]; then
   # Use the boilerplate template if azure-oidc has shipped it; otherwise
   # write the locked canonical schema inline so the install is always
   # complete (invariant #4).
-  if [[ -f "${HAXCMS_DIR}/system/boilerplate/systemsetup/azure.json" ]]; then
+  if [[ -f "${HA_DIR}/system/boilerplate/systemsetup/azure.json" ]]; then
     bash "${LEDGER}" backup "_iamConfig/azure.json" >> /dev/null
-    cp "${HAXCMS_DIR}/system/boilerplate/systemsetup/azure.json" "_iamConfig/azure.json"
+    cp "${HA_DIR}/system/boilerplate/systemsetup/azure.json" "_iamConfig/azure.json"
   else
     bash "${LEDGER}" backup "_iamConfig/azure.json" >> /dev/null
     cat > "_iamConfig/azure.json" <<AZJSON
@@ -457,7 +464,7 @@ AZJSON
   if command -v python3 >/dev/null 2>&1; then
     AZ_TENANT_VAL="${AZ_TENANT}" AZ_CLIENT_VAL="${AZ_CLIENT}" AZ_SECRET_VAL="${AZ_SECRET}" \
       REDIRECT_VAL="${REDIRECT_URI}" ISSUER_VAL="https://login.microsoftonline.com/${AZ_TENANT}/v2.0" \
-      SCOPES_VAL="${AZ_SCOPES}" python3 - <<'PY'
+      SCOPES_VAL="${AZ_SCOPES}" JSON_FILE="${TMP_AZ_JSON}" python3 - <<'PY'
 import json, os, sys
 p = os.environ.get("JSON_FILE")
 data = {
