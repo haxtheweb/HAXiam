@@ -85,7 +85,11 @@ if [ "${AZURE_CONFIGURED:-false}" = "true" ]; then
   fi
 fi
 haxecho "deploy-app: bash ${INSTALLER} ${REDACTED_DISPLAY}"
-sudo bash "${INSTALLER}" "${INSTALL_ARGS[@]}"
+# Use sudo -E so HAXIAM_AZURE_SECRET survives sudo's env filtering
+# (review fix #13). Redirect installer stdout to stderr so only the
+# final echo "${WEBROOT}" appears on stdout for JPS ${response} capture
+# (review fix #4 — installer's install_green/install_red echo to stdout).
+sudo -E bash "${INSTALLER}" "${INSTALL_ARGS[@]}" >&2
 
 # 5. Composer fallback if the installer didn't already vendor in.
 if [ ! -f "${WEBROOT}/vendor/autoload.php" ]; then

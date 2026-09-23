@@ -58,6 +58,12 @@ case "${1:-serve}" in
     mkdir -p "${APACHE_RUN_DIR:-/var/run/apache2}"
     grep -q '^ServerName ' /etc/apache2/apache2.conf 2>/dev/null \
       || echo 'ServerName localhost' >> /etc/apache2/apache2.conf
+    # The installer may have started Apache via `apache2ctl graceful` (a
+    # background daemon). If so, `exec apache2 -DFOREGROUND` exits with
+    # "already running" and kills PID 1. Stop any existing instance first.
+    apache2ctl stop 2>/dev/null || true
+    sleep 1
+    rm -f /var/run/apache2/apache2.pid 2>/dev/null || true
     echo '[haxiam-docker-entrypoint] Starting apache2 in foreground'
     exec apache2 -DFOREGROUND
     ;;

@@ -89,9 +89,12 @@ echo "=== 2/4 Flag surface ==="
 # that needs a writable mount.
 
 # Help: exit 0 + grep for locked flag names.
-if ${DOCKER} run --rm -e TERM "${DOCKER_IMAGE_TAG}" \
-      one-shot --help 2>&1 | tee /tmp/haxiam-docker-help.log \
-      | grep -q -- "--azure-redirect-base"; then
+# Capture output first, then grep, so pipefail doesn't cause a false
+# failure when grep exits early and tee gets SIGPIPE (review
+# previously-missed #3).
+${DOCKER} run --rm -e TERM "${DOCKER_IMAGE_TAG}" \
+      one-shot --help > /tmp/haxiam-docker-help.log 2>&1 || true
+if grep -q -- "--azure-redirect-base" /tmp/haxiam-docker-help.log; then
   record_pass "--help exits 0 and mentions --azure-redirect-base"
 else
   record_fail "--help didn't mention --azure-redirect-base"
@@ -237,11 +240,13 @@ record_pass "apache responded on http://127.0.0.1:${DOCKER_PORT}/"
 login_code=$(curl --silent --output /dev/null \
   --max-time 5 -w '%{http_code}' \
   "http://127.0.0.1:${DOCKER_PORT}/login.php")
+# Only accept 2xx/3xx as a pass — a 404 (missing login.php) should NOT
+# count as a healthy install (review fix #11).
 case "${login_code}" in
-  2*|3*|4*)
-    record_pass "/login.php responded ${login_code} (non-5xx)" ;;
+  2*|3*)
+    record_pass "/login.php responded ${login_code} (2xx/3xx)" ;;
   *)
-    record_fail "/login.php responded ${login_code} (5xx-family)" ;;
+    record_fail "/login.php responded ${login_code} (expected 2xx/3xx)" ;;
 esac
 
 # ----------------------------------------------------------------------

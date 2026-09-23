@@ -286,8 +286,12 @@ class AzureOIDC
             ));
 
         try {
+            // league/oauth2-client serializes params via http_build_query, so
+            // passing an array produces scope[0]=openid... instead of the
+            // space-delimited scope=openid%20profile%20email Microsoft
+            // requires. Pass a space-delimited string (review fix #10).
             $url = $provider->getAuthorizationUrl(array(
-                'scope' => $scopesArray,
+                'scope' => implode(' ', $scopesArray),
                 'state' => $state,
                 'response_type' => 'code',
                 'prompt' => 'select_account',

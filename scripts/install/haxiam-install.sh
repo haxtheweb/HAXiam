@@ -308,6 +308,10 @@ cat > "${VHOST_CONF}" <<VHOST
 VHOST
 a2dissite 000-default >/dev/null 2>&1 || true
 a2ensite haxiam >/dev/null 2>&1 || true
+# Reload Apache so the new vhost takes effect immediately on a running
+# host (review fix #14 — otherwise the site isn't reachable until a
+# manual restart). Use graceful to avoid dropping in-flight requests.
+apache2ctl graceful 2>/dev/null || service apache2 reload 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # PHASE 3 - HAXiam bootstrap (absorbs whateveryousayiam.sh).
@@ -414,8 +418,8 @@ if [[ ! -f "_iamConfig/azure.json" ]]; then
 }
 AZJSON
   fi
-  chmod 0640 "_iamConfig/azure.json"
-  chown "${WWW_USER}:${WEB_GROUP}" "_iamConfig/azure.json" 2>/dev/null || true
+  chmod 0600 "_iamConfig/azure.json"
+  chown "${WWW_USER}" "_iamConfig/azure.json" 2>/dev/null || true
   WROTE_ANY="yes"
   bash "${LEDGER}" wrote "_iamConfig/azure.json" >> /dev/null
   install_green "Wrote _iamConfig/azure.json (enabled=false)"
@@ -454,7 +458,11 @@ if [[ "${DO_LE}" == "run" ]]; then
     install_red "--le requires --domain."
     exit 6
   fi
-  certbot --apache --non-interactive --agree-tos -d "${DOMAIN}" \
+  # Certbot requires either --email or --register-unsafely-without-email
+  # for non-interactive mode (review fix #6). We default to no-email since
+  # the installer doesn't collect one; operators who want renewal notices
+  # can re-run with --email via the standalone certbot CLI.
+  certbot --apache --non-interactive --agree-tos --register-unsafely-without-email -d "${DOMAIN}" \
     || { install_red "certbot failed for ${DOMAIN}."; exit 6; }
   # Auto-renew cron (certbot installs a timer on systemd; on cron-only
   # systems add a daily entry). Idempotent.
@@ -565,12 +573,20 @@ PY
       REDIRECT_VAL="${REDIRECT_URI}" ISSUER_VAL="https://login.microsoftonline.com/${AZ_TENANT}/v2.0" \
       SCOPES_VAL="${AZ_SCOPES}" || { rm -f "${TMP_AZ_JSON}"; install_red "Neither python3 nor perl available to write azure.json."; exit 5; }
   fi
-  mv "${TMP_AZ_JSON}" "_iamConfig/azure.json"
-  chmod 0640 "_iamConfig/azure.json"
-  chown "${WWW_USER}:${WEB_GROUP}" "_iamConfig/azure.json" 2>/dev/null || true
-  WROTE_ANY="yes"
-  bash "${LEDGER}" wrote "_iamConfig/azure.json" >> /dev/null
+  # Idempotency: if azure.json already exists with enabled=true, preserve
+  # the operator's existing config instead of overwriting it (review fix #7).
+  # Only write if the file doesn't exist or is still the disabled template.
+  if [[ -f "_iamConfig/azure.json" ]] && grep -q '"enabled"[[:space:]]*:[[:space:]]*true' "_iamConfig/azure.json" 2>/dev/null; then
+    install_green "_iamConfig/azure.json already configured (enabled=true) — preserving existing config."
+  else
+    mv "${TMP_AZ_JSON}" "_iamConfig/azure.json"
+    chmod 0600 "_iamConfig/azure.json"
+    chown "${WWW_USER}" "_iamConfig/azure.json" 2>/dev/null || true
+    WROTE_ANY="yes"
+    bash "${LEDGER}" wrote "_iamConfig/azure.json" >> /dev/null
+  fi
   AZURE_WAS_CONFIGURED="yes"
+  rm -f "${TMP_AZ_JSON}"
 
   # Validate. Never echo the secret; report length only.
   echo "Azure: <set>  tenant=<set>  client=<set>  secret=<len-${#AZ_SECRET}>"

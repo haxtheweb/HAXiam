@@ -237,8 +237,13 @@ HEALTH_HOST="${domain:-localhost}"
 HEALTH_CODE="000"
 for proto in https http; do
   HEALTH_URL="${proto}://${HEALTH_HOST}/"
+  # Capture curl's exit status separately from the HTTP code. When curl
+  # fails, -w '%{http_code}' still emits 000 and the || echo 000 appends
+  # another 000, producing 000000 which doesn't match the failure check
+  # (review previously-missed #2). Use a temp var and only assign 000
+  # when curl actually fails.
   HEALTH_CODE="$(curl --silent --output /dev/null --max-time 8 -L \
-    -k "${HEALTH_URL}" -w '%{http_code}' 2>/dev/null || echo 000)"
+    -k "${HEALTH_URL}" -w '%{http_code}' 2>/dev/null)" || HEALTH_CODE="000"
   if [[ "${HEALTH_CODE}" != "000" && ! "${HEALTH_CODE}" =~ ^5 ]]; then
     break
   fi

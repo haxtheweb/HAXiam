@@ -67,6 +67,11 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
+# Use mktemp to avoid symlink attacks on a fixed /tmp filename (review
+# fix #9). Clean up via trap.
+ISSUER_TMP="$(mktemp)"
+trap 'rm -f "${ISSUER_TMP}"' EXIT
+
 DISCOVERY_BODY="${body}" python3 -c '
 import json, os, sys
 try:
@@ -78,13 +83,12 @@ if "issuer" not in data:
     print("check-azure-sso: discovery JSON did not contain an issuer field.", file=sys.stderr)
     sys.exit(1)
 print(data["issuer"])
-' > /tmp/haxiam-azure-issuer.txt || {
+' > "${ISSUER_TMP}" || {
   echo "check-azure-sso: failed to parse issuer from discovery response." >&2
   exit 1
 }
 
-discovered_issuer="$(cat /tmp/haxiam-azure-issuer.txt)"
-rm -f /tmp/haxiam-azure-issuer.txt
+discovered_issuer="$(cat "${ISSUER_TMP}")"
 expected_issuer="https://login.microsoftonline.com/${tenant_id}/v2.0"
 
 if [[ -z "${discovered_issuer}" ]]; then
