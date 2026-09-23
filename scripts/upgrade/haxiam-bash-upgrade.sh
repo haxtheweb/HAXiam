@@ -231,11 +231,20 @@ done
 # the deployment was declared unhealthy (review fix #9 + #10).
 # ----------------------------------------------------------------------
 upgrade_green "Bash based upgrade complete - running health check."
-HEALTH_URL="https://${domain:-localhost}/"
-HEALTH_CODE="$(curl --silent --output /dev/null --max-time 8 -L \
-  -k "${HEALTH_URL}" -w '%{http_code}' || echo 000)"
+# The installer defaults to --skip-le (HTTP), so the dashboard may not be
+# on HTTPS. Try HTTPS first, then fall back to HTTP (review fix #10).
+HEALTH_HOST="${domain:-localhost}"
+HEALTH_CODE="000"
+for proto in https http; do
+  HEALTH_URL="${proto}://${HEALTH_HOST}/"
+  HEALTH_CODE="$(curl --silent --output /dev/null --max-time 8 -L \
+    -k "${HEALTH_URL}" -w '%{http_code}' 2>/dev/null || echo 000)"
+  if [[ "${HEALTH_CODE}" != "000" && ! "${HEALTH_CODE}" =~ ^5 ]]; then
+    break
+  fi
+done
 if [[ "${HEALTH_CODE}" == "000" || "${HEALTH_CODE}" =~ ^5 ]]; then
-  upgrade_red "Post-upgrade health check FAILED: ${HEALTH_URL} returned ${HEALTH_CODE}."
+  upgrade_red "Post-upgrade health check FAILED: last tried ${HEALTH_URL} returned ${HEALTH_CODE}."
   upgrade_red "Snapshots preserved under ${SNAPSHOT_DIR}; see upgrade_history.txt."
   exit 1
 fi

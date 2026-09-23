@@ -89,11 +89,15 @@ if (!is_string($user) || trim($user) === '') {
 // --- Phase 2: Success path — set session, bootstrap HAXcms, issue token ---
 // Now that the callback is validated, set the session user and bootstrap
 // the HAXcms config for refresh-token issuance + enterprise URL.
+// CRITICAL: bootstrapHAX.php MUST be included BEFORE iamConfig.php because
+// iamConfig.php references $HAXCMS (via $IAM->HAXcmsInit($HAXCMS) and the
+// session-routing logic). Without bootstrapHAX, $HAXCMS is undefined and
+// PHP 8 raises a TypeError (review fix #6).
 $_SESSION['HAXIAM_USER'] = $user;
 
-include_once IAM_ROOT . '/_iamConfig/iamConfig.php';
 include_once IAM_ROOT . '/cores/' . HAXIAM_ACTIVE_CORE . '/system/backend/php/bootstrapHAX.php';
 include_once $HAXCMS->configDirectory . '/config.php';
+include_once IAM_ROOT . '/_iamConfig/iamConfig.php';
 
 // Issue refresh token (mirrors iamConfig.php / login.php pattern).
 if (method_exists($HAXCMS, 'getRefreshToken') && method_exists($HAXCMS, 'setRefreshTokenCookie')) {

@@ -60,11 +60,13 @@ hooks:
   # subsequent runs.
   post-start:
   - exec: |
-      if ! grep -Eq '^[[:space:]]*haxiam[[:space:]]*=' /var/www/iam/_iamConfig/config.cfg 2>/dev/null; then
+      # DDEV mounts the project at /var/www/html, not /var/www/iam.
+      # Use --ha /var/www/html so the installer targets the DDEV app root.
+      if ! grep -Eq '^[[:space:]]*haxiam[[:space:]]*=' /var/www/html/_iamConfig/config.cfg 2>/dev/null; then
         echo "[.ddev] First start — running scripts/install/haxiam-install.sh"
-        sudo bash /var/www/iam/scripts/install/haxiam-install.sh --distro auto --skip-le --non-interactive
+        sudo bash /var/www/html/scripts/install/haxiam-install.sh --distro auto --skip-le --non-interactive --ha /var/www/html
       else
-        echo "[.ddev] Existing install detected at /var/www/iam — skipping installer."
+        echo "[.ddev] Existing install detected at /var/www/html — skipping installer."
       fi
   # Convenience message telling the operator where to go next.
   - exec: echo 'go to http://haxiam.ddev.local — the install is idempotent, run `ddev restart` after pulling a new installer.'

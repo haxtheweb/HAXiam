@@ -58,13 +58,33 @@ if [[ "${http_code}" != "200" ]]; then
   exit 1
 fi
 
-# JSON sanity sniff - require balanced braces and an "issuer" key.
-if ! printf '%s' "${body}" | grep -q '"issuer"'; then
-  echo "check-azure-sso: discovery JSON did not contain an issuer field." >&2
+# Parse the discovery response as JSON and extract the issuer field.
+# Uses python3 for proper JSON parsing instead of grep+sed, which could
+# be fooled by a malformed response containing a matching-looking issuer
+# (review fix #12).
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "check-azure-sso: python3 is required for JSON parsing." >&2
   exit 1
 fi
 
-discovered_issuer="$(printf '%s' "${body}" | sed -n 's/.*"issuer"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+DISCOVERY_BODY="${body}" python3 -c '
+import json, os, sys
+try:
+    data = json.loads(os.environ["DISCOVERY_BODY"])
+except Exception as e:
+    print(f"check-azure-sso: discovery response is not valid JSON: {e}", file=sys.stderr)
+    sys.exit(1)
+if "issuer" not in data:
+    print("check-azure-sso: discovery JSON did not contain an issuer field.", file=sys.stderr)
+    sys.exit(1)
+print(data["issuer"])
+' > /tmp/haxiam-azure-issuer.txt || {
+  echo "check-azure-sso: failed to parse issuer from discovery response." >&2
+  exit 1
+}
+
+discovered_issuer="$(cat /tmp/haxiam-azure-issuer.txt)"
+rm -f /tmp/haxiam-azure-issuer.txt
 expected_issuer="https://login.microsoftonline.com/${tenant_id}/v2.0"
 
 if [[ -z "${discovered_issuer}" ]]; then

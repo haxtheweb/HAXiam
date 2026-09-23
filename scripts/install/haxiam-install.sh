@@ -22,6 +22,10 @@
 set -e
 set -o pipefail
 
+# Default TERM so tput never aborts under set -e when invoked from CI,
+# JPS, or any non-TTY context (review fix #7).
+export TERM="${TERM:-dumb}"
+
 # ---------------------------------------------------------------------------
 # 0. Locate ourselves + colour helpers.
 # ---------------------------------------------------------------------------
@@ -29,10 +33,10 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "${DIR}"
 cd ../../
 
-txtbld=$(tput bold)             # Bold
-bldgrn=${txtbld}$(tput setaf 2) # Green / success
-bldred=${txtbld}$(tput setaf 1) # Red / warning
-txtreset=$(tput sgr0)
+txtbld=$(tput bold 2>/dev/null || true)             # Bold
+bldgrn=${txtbld}$(tput setaf 2 2>/dev/null || true) # Green / success
+bldred=${txtbld}$(tput setaf 1 2>/dev/null || true) # Red / warning
+txtreset=$(tput sgr0 2>/dev/null || true)
 
 install_green(){ echo "${bldgrn}$1${txtreset}"; }
 install_red(){ echo "${bldred}$1${txtreset}"; }
@@ -52,6 +56,7 @@ KEY_PATH=""               # --key
 AZ_TENANT=""
 AZ_CLIENT=""
 AZ_SECRET=""
+AZ_SECRET_FROM_ENV="no"
 AZ_REDIRECT_BASE=""
 AZ_SCOPES="openid profile email"
 HA_DIR="/var/www/iam"
@@ -124,7 +129,14 @@ if [[ -n "${KEY_PATH}" ]] && [[ -z "${CERT_PATH}" ]]; then
   install_red "--key requires --cert."; exit 1
 fi
 
-# Azure triple-or-none.
+# Azure triple-or-none. The secret can be provided via CLI (--azure-secret)
+# or via the HAXIAM_AZURE_SECRET env var (review fix #5: keeps it out of
+# /proc/<pid>/cmdline on shared hosts). If both are given, CLI wins.
+if [[ -z "${AZ_SECRET}" ]] && [[ -n "${HAXIAM_AZURE_SECRET:-}" ]]; then
+  AZ_SECRET="${HAXIAM_AZURE_SECRET}"
+  AZ_SECRET_FROM_ENV="yes"
+fi
+
 AZ_FLAGS_SET=0
 [[ -n "${AZ_TENANT}" ]] && AZ_FLAGS_SET=$((AZ_FLAGS_SET + 1))
 [[ -n "${AZ_CLIENT}" ]] && AZ_FLAGS_SET=$((AZ_FLAGS_SET + 1))
@@ -139,9 +151,11 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-# cd to the install root so all relative paths (_iamConfig/, cores/, etc.)
-# resolve against --ha, not the repo root the script was invoked from.
+# Create the install root if it doesn't exist yet (a fresh install with a
+# non-default --ha targets a directory that won't exist yet). mkdir -p
+# before cd so set -e doesn't abort (review fix #8).
 # LEDGER and AZURE_CHECK are already absolute (${DIR}/../utilities/...).
+mkdir -p "${HA_DIR}"
 cd "${HA_DIR}"
 
 # ---------------------------------------------------------------------------
@@ -253,7 +267,8 @@ if [[ ${PKG_NEEDED} -eq 1 ]]; then
     apt-get install -y software-properties-common || true
     add-apt-repository -y ppa:ondrej/php || true
   fi
-  apt-get update
+  apt-get update \
+    || { install_red "apt-get update failed."; exit 2; }
   apt-get install -y ${PHP_PKGS} apache2 git brotli certbot python3-certbot-apache ${PHP_FPM} \
     || { install_red "apt-get install failed"; exit 2; }
   install_green "apt-get install ok."
@@ -270,6 +285,29 @@ if [[ ! -e /etc/apache2/conf-available/http2.conf ]]; then
   echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf
 fi
 a2enconf http2 >/dev/null 2>&1 || true
+
+# Create an Apache vhost with DocumentRoot pointing at the install root
+# so the site is actually reachable after install. Without this, Apache
+# continues serving /var/www/html (the default site) and a successful
+# installer does not make HAXiam reachable (review fix #9).
+VHOST_CONF="/etc/apache2/sites-available/haxiam.conf"
+cat > "${VHOST_CONF}" <<VHOST
+<VirtualHost *:80>
+    ServerAdmin webmaster@localhost
+    DocumentRoot ${HA_DIR}
+    <Directory ${HA_DIR}/>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+    <FilesMatch "\.php$">
+        SetHandler "proxy:unix:/run/php/${PHP_FPM}.sock|fcgi://localhost"
+    </FilesMatch>
+    Protocols h2 http/1.1
+</VirtualHost>
+VHOST
+a2dissite 000-default >/dev/null 2>&1 || true
+a2ensite haxiam >/dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------
 # PHASE 3 - HAXiam bootstrap (absorbs whateveryousayiam.sh).
@@ -376,7 +414,8 @@ if [[ ! -f "_iamConfig/azure.json" ]]; then
 }
 AZJSON
   fi
-  chmod 0600 "_iamConfig/azure.json"
+  chmod 0640 "_iamConfig/azure.json"
+  chown "${WWW_USER}:${WEB_GROUP}" "_iamConfig/azure.json" 2>/dev/null || true
   WROTE_ANY="yes"
   bash "${LEDGER}" wrote "_iamConfig/azure.json" >> /dev/null
   install_green "Wrote _iamConfig/azure.json (enabled=false)"
@@ -527,7 +566,8 @@ PY
       SCOPES_VAL="${AZ_SCOPES}" || { rm -f "${TMP_AZ_JSON}"; install_red "Neither python3 nor perl available to write azure.json."; exit 5; }
   fi
   mv "${TMP_AZ_JSON}" "_iamConfig/azure.json"
-  chmod 0600 "_iamConfig/azure.json"
+  chmod 0640 "_iamConfig/azure.json"
+  chown "${WWW_USER}:${WEB_GROUP}" "_iamConfig/azure.json" 2>/dev/null || true
   WROTE_ANY="yes"
   bash "${LEDGER}" wrote "_iamConfig/azure.json" >> /dev/null
   AZURE_WAS_CONFIGURED="yes"

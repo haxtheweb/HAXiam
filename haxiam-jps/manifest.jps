@@ -41,7 +41,9 @@ addons:
     link: https://github.com/jelastic-public/lets-encrypt/blob/master/manifest.jps
 
 # -----------------------------------------------------------------------------
-# Globals
+# Globals — the hosting provider sets HAX_ADMIN_USER / HAX_ADMIN_PASS through
+# their client interface. The setupUser action applies them to the HAXcms
+# admin account after install (review fix #15).
 # -----------------------------------------------------------------------------
 
 globals:
@@ -93,16 +95,33 @@ settings:
           default: ""
 
 # -----------------------------------------------------------------------------
-# Actions — the ordered sequence described in
-# /_contracts/installer_flag_surface.md.
+# onInstall — the entry point for executing actions (JPS spec).
+# Actions run sequentially in list order. Conditional execution uses `if`.
+# -----------------------------------------------------------------------------
+
+onInstall:
+  - configSystem
+  - deployApp
+  - setupUser
+  - if: '${settings.skipLE} == "false"'
+    installAddon:
+      id: lets-encrypt
+      name: "Let's Encrypt"
+    setAddonEnv:
+      env_domain: ${env.domain}
+  - if: '${settings.configureAzure} == "true"'
+    configureAzure: {}
+
+# -----------------------------------------------------------------------------
+# Named actions — each is a key in the actions mapping (JPS spec).
 # -----------------------------------------------------------------------------
 
 actions:
 
-  # 1. configSystem. Install distro packages the unified installer expects
-  #    to find + enable every Apache module the unified installer
-  #    references in its vhost template.
-  - name: configSystem
+  # 1. configSystem. Install distro packages + Apache modules + write the
+  #    runtime IAM domain config so routing uses the real Jelastic domain
+  #    instead of the hax.WHATEVER.edu placeholder (review fix #2).
+  configSystem:
     cmd[cp]: |
       set -eu
       export DEBIAN_FRONTEND=noninteractive
@@ -119,12 +138,25 @@ actions:
       a2enconf php8.3-fpm
       printf 'Protocols h2 http/1.1\n' > /etc/apache2/conf-available/http2.conf
       a2enconf http2
+      # Write /var/IAMCONFIG.php with the Jelastic env domain so iamConfig.php
+      # uses the real domain instead of the hax.WHATEVER.edu boilerplate
+      # default (review fix #2).
+      cat > /var/IAMCONFIG.php <<IAMCFG
+      <?php
+      define('IAM_PROTOCOL', 'https://');
+      define('IAM_BASE_DOMAIN', '${env.domain}');
+      define('IAM_EMPOWERED', 'iam');
+      define('IAM_PRIVATE', 'courses');
+      define('IAM_OPEN', 'oer');
+      IAMCFG
       service apache2 restart
       echo "[jps] configSystem done"
 
   # 2. deployApp. Hand off to the unified installer. Env vars carried
-  #    from the form fields map 1:1 to the locked installer flags.
-  - name: deployApp
+  #    from the form fields map to the locked installer flags. The script
+  #    echoes the discovered webroot to stdout; setEnv captures it as
+  #    HAX_HAXIAM_DIR for subsequent actions (review fix #3).
+  deployApp:
     script: deploy-app.sh
     env:
       AZURE_CONFIGURED: ${settings.configureAzure}
@@ -132,23 +164,23 @@ actions:
       AZ_CLIENT:        ${settings.azureClientId}
       AZ_SECRET:        ${settings.azureClientSecret}
       AZ_DOMAIN:        ${settings.azureRedirectDomain}
+    setEnv:
+      HAX_HAXIAM_DIR: ${response}
 
-  # 3. installLE. Only when Skip Let's Encrypt was UNCHECKED. Hand off to
-  #    the community lets-encrypt JPS on env.domain.
-  - if: '${settings.skipLE} == "false"'
-    name: installLE
-    installAddon:
-      id: lets-encrypt
-      name: "Let's Encrypt"
-    setAddonEnv:
-      env_domain: ${env.domain}
+  # 3. setupUser. Applies the hosting-provider admin credentials to the
+  #    HAXcms core's _config/config.php, overriding the random uuidgen
+  #    credentials the installer generated (review fix #15).
+  setupUser:
+    script: setup-user.sh
+    env:
+      HAX_ADMIN_USER: ${globals.HAX_ADMIN_USER}
+      HAX_ADMIN_PASS: ${globals.HAX_ADMIN_PASS}
 
   # 4. configureAzure. Only when Configure Azure AD SSO was CHECKED.
-  #    Writes _iamConfig/azure.json verbatim to the locked schema, sets
-  #    0600, then runs scripts/utilities/check-azure-sso.sh which the
-  #    azure-oidc child owns.
-  - if: '${settings.configureAzure} == "true"'
-    name: configureAzure
+  #    Writes _iamConfig/azure.json to the locked schema, sets 0640 +
+  #    chowns to www-data so PHP-FPM can read it (review fix #4), then
+  #    runs scripts/utilities/check-azure-sso.sh.
+  configureAzure:
     cmd[cp]: |
       set -eu
       IAM_DIR="${HAX_HAXIAM_DIR:-/var/www/iam}"
@@ -173,7 +205,10 @@ actions:
         REDIRECT_VAL="$REDIRECT_URI" ISSUER_VAL="$ISSUER" SCOPES_VAL="$SCOPES" \
         JSON_FILE="${IAM_DIR}/_iamConfig/azure.json" \
         python3 -c 'import json,os; d={"enabled":True,"tenantId":os.environ["AZ_TENANT_VAL"],"clientId":os.environ["AZ_CLIENT_VAL"],"clientSecret":os.environ["AZ_SECRET_VAL"],"redirectUri":os.environ["REDIRECT_VAL"],"issuer":os.environ["ISSUER_VAL"],"scopes":os.environ["SCOPES_VAL"],"providerClass":"AzureOIDC"}; f=open(os.environ["JSON_FILE"],"w"); json.dump(d,f,indent=4); f.write(chr(10)); f.close()'
-      chmod 0600 "${IAM_DIR}/_iamConfig/azure.json"
+      # 0640 + chown www-data so the PHP-FPM worker can read the file
+      # (review fix #4 — 0600 root-only made it unreadable by www-data).
+      chmod 0640 "${IAM_DIR}/_iamConfig/azure.json"
+      chown www-data:www-data "${IAM_DIR}/_iamConfig/azure.json"
 
       # Validation utility owned by the azure-oidc child.
       if [ -x "${IAM_DIR}/scripts/utilities/check-azure-sso.sh" ]; then

@@ -245,50 +245,58 @@ case "${login_code}" in
 esac
 
 # ----------------------------------------------------------------------
-# 4. Idempotency on second `docker run`. We restart the same image
-# against the populated _iamConfig/config.cfg — installer must NOT
-# clobber anything (installer invariant #2). We assert by file mtimes:
-# - the SYSTEM_VERSION.txt should not change,
-# - the HAXcms core's git working tree should still be clean.
+# 4. Idempotency. We EXPLICITLY run the installer a second time inside
+# the container (via docker exec one-shot) against the populated
+# _iamConfig/config.cfg — installer must NOT clobber anything (invariant
+# #2). We assert by file count comparison and the "Existing install
+# detected" banner (review fix #13: the old test only checked the
+# entrypoint skip message, never actually invoked the installer twice).
 # ----------------------------------------------------------------------
 echo "=== 4/4 Idempotency ==="
 
-# Capture mtime hash-count of the install directory BEFORE restart.
+# Capture file count BEFORE the explicit second installer run.
 pre_count=$(${DOCKER} exec "${container}" sh -c \
   'find /var/www/iam -type f -not -path "*/vendor/*" -not -path "*/cores/*" 2>/dev/null | wc -l' 2>/dev/null || echo 0)
 pre_count="${pre_count//[!0-9]/}"
 pre_count="${pre_count:-0}"
-record_pass "captured file count before restart: ${pre_count}"
+record_pass "captured file count before second installer run: ${pre_count}"
 
-# Restart by stopping + starting; the bind mount of /tmp staging dir
-# persists, the installer's idempotency invariants (preserve oss
-# _iamConfig/config.cfg) kick in and prevent re-write.
-${DOCKER} stop "${container}" >/dev/null 2>&1 || true
-container2=$(${DOCKER} run --rm -d -e TERM \
-      -p "${DOCKER_PORT}:80" \
-      -v "${STAGE_DIR}:/var/www/iam" \
-      "${DOCKER_IMAGE_TAG}" 2>&1) || {
-  record_fail "second docker run failed: ${container2}"
-  exit ${EXIT_IDEMPOTENT}
-}
-# Watch the container log for the installer's "Existing install detected"
-# banner — this proves the installer took the idempotent path (no rewrite).
-seen_existing=0
-for i in $(seq 1 60); do
-  if ${DOCKER} logs "${container2}" 2>/dev/null | grep -q 'Existing install detected'; then
-    seen_existing=1; break
-  fi
-  sleep 5
-done
-if [[ ${seen_existing} -ne 1 ]]; then
-  record_fail "second start did not log 'Existing install detected'"
-  ${DOCKER} logs "${container2}" | tail -80
-  ${DOCKER} stop "${container2}" >/dev/null 2>&1 || true
-  exit ${EXIT_IDEMPOTENT}
+# Explicitly run the installer a second time inside the running container.
+# This exercises the installer's own idempotency path (not just the
+# entrypoint's skip check). Capture stdout+stderr to a log.
+idem_exit=0
+${DOCKER} exec -e TERM "${container}" \
+  bash /var/www/iam/scripts/install/haxiam-install.sh \
+  --distro auto --skip-le --non-interactive \
+  >/tmp/haxiam-docker-idem.log 2>&1 || idem_exit=$?
+
+if [[ ${idem_exit} -ne 0 ]]; then
+  record_fail "second explicit installer run exited ${idem_exit} (expected 0)"
+  cat /tmp/haxiam-docker-idem.log | tail -30
+else
+  record_pass "second explicit installer run exited 0"
 fi
-record_pass "second start took the idempotent path (no rewrite)"
 
-# Wait for apache to come back up.
+# Check the log for the "Existing install detected" banner.
+if grep -q 'Existing install detected' /tmp/haxiam-docker-idem.log; then
+  record_pass "second installer run detected existing install (idempotent path)"
+else
+  record_fail "second installer run did not log 'Existing install detected'"
+  cat /tmp/haxiam-docker-idem.log | tail -30
+fi
+
+# Capture file count AFTER the second run and compare.
+post_count=$(${DOCKER} exec "${container}" sh -c \
+  'find /var/www/iam -type f -not -path "*/vendor/*" -not -path "*/cores/*" 2>/dev/null | wc -l' 2>/dev/null || echo 0)
+post_count="${post_count//[!0-9]/}"
+post_count="${post_count:-0}"
+if [[ "${pre_count}" == "${post_count}" ]]; then
+  record_pass "file count unchanged after second run (${pre_count} == ${post_count})"
+else
+  record_fail "file count changed: ${pre_count} -> ${post_count} (idempotency violated)"
+fi
+
+# Verify apache still responds after the second installer run.
 apk=0
 for i in $(seq 1 30); do
   if curl --silent --fail --max-time 5 "http://127.0.0.1:${DOCKER_PORT}/" >/dev/null 2>&1; then
@@ -297,12 +305,12 @@ for i in $(seq 1 30); do
   sleep 2
 done
 if [[ ${apk} -ne 1 ]]; then
-  record_fail "apache did not respond on port ${DOCKER_PORT} after restart"
+  record_fail "apache did not respond after second installer run"
 else
-  record_pass "apache re-responded after restart"
+  record_pass "apache responded after second installer run"
 fi
 
-${DOCKER} stop "${container2}" >/dev/null 2>&1 || true
+${DOCKER} stop "${container}" >/dev/null 2>&1 || true
 
 # ----------------------------------------------------------------------
 # Summary

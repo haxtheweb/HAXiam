@@ -67,7 +67,9 @@ if [ "${AZURE_CONFIGURED:-false}" = "true" ]; then
   : "${AZ_SECRET:?deploy-app: AZURE_CONFIGURED=true but AZ_SECRET is unset}"
   INSTALL_ARGS+=(--azure-tenant "${AZ_TENANT}")
   INSTALL_ARGS+=(--azure-client "${AZ_CLIENT}")
-  INSTALL_ARGS+=(--azure-secret "${AZ_SECRET}")
+  # Pass the secret via the HAXIAM_AZURE_SECRET env var instead of as a
+  # CLI arg so it does NOT appear in /proc/<pid>/cmdline (review fix #5).
+  export HAXIAM_AZURE_SECRET="${AZ_SECRET}"
   if [ -n "${AZ_DOMAIN:-}" ]; then
     INSTALL_ARGS+=(--azure-redirect-base "https://${AZ_DOMAIN}")
   fi
@@ -96,3 +98,7 @@ if [ ! -f "${WEBROOT}/vendor/autoload.php" ]; then
 fi
 
 haxecho "deploy-app: finished"
+
+# Echo the discovered webroot to stdout so the JPS manifest can capture it
+# via setEnv and pass it to subsequent actions (configureAzure, setupUser).
+echo "${WEBROOT}"
