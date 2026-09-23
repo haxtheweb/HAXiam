@@ -25,6 +25,33 @@ $IAM->HAXcmsInit($HAXCMS);
 $IAM->enterprise->iamUrl = IAM_PROTOCOL . IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN . '/';
 $IAM->enterprise->logout = 'https://login.microsoftonline.com/your_tenant_id/oauth2/v2.0/logout';
 $IAM->enterprise->login = '/login.php';
+// --------------------------------------------------------------------------
+// Azure AD / OIDC bridge (issue #3070, _contracts/azure_json_schema.md).
+// If _iamConfig/azure.json exists AND AzureOIDC::isEnabled() returns true,
+// we treat $_SESSION['HAXIAM_USER'] set by oauth-callback.php as the
+// authoritative source for $_SESSION['HAXIAM_USER'] below, AND we override
+// the logout URL to the real tenant logout URL (no more 'your_tenant_id'
+// placeholder). The legacy REMOTE_USER / PHP_AUTH_USER fallback block a
+// few lines down stays untouched so Shibboleth / Apache-module installs
+// keep working unchanged.
+$azure_enabled_bridge = false;
+if (
+  file_exists(__DIR__ . '/../../../_iamConfig/azure.json') &&
+  class_exists('AzureOIDC')
+) {
+  try {
+    $__azure_oidc = AzureOIDC::load(__DIR__ . '/../../../_iamConfig/azure.json');
+    if ($__azure_oidc->isEnabled()) {
+      $azure_enabled_bridge = true;
+      $IAM->enterprise->logout = $__azure_oidc->getLogoutUrl();
+    }
+  } catch (Throwable $__azure_bridge_err) {
+    // Fail closed: silently fall through to the legacy REMOTE_USER path.
+    $azure_enabled_bridge = false;
+  }
+}
+unset($__azure_oidc, $__azure_bridge_err);
+// --------------------------------------------------------------------------
 // CDN so all paths resolve on front end from 1 place
 if ($HAXCMS) {
   $HAXCMS->cdn = IAM_PROTOCOL . IAM_BASE_DOMAIN . '/cdn/1.x.x/';
@@ -32,7 +59,11 @@ if ($HAXCMS) {
   #$HAXCMS->cdn = "https://media.aanda.psu.edu/sites/all/libraries/webcomponents/";  
 }
 
-// don't set an enterprise user if we don't have one but check our two logical locations
+// don't set an enterprise user if we don't have one but check our two logical locations.
+// Invariant #6 from _contracts/azure_json_schema.md: when Azure is enabled,
+// $_SESSION['HAXIAM_USER'] is set by oauth-callback.php after ID-token validation,
+// and we deliberately DO NOT overwrite it from REMOTE_USER. Otherwise the legacy
+// REMOTE_USER / PHP_AUTH_USER fallback applies (Shibboleth / Apache module).
 if (!isset($_SESSION['HAXIAM_USER']) || $_SESSION['HAXIAM_USER'] == '') {
   if (isset($_SERVER['REMOTE_USER'])) {
     $_SESSION['HAXIAM_USER'] = $_SERVER['REMOTE_USER'];

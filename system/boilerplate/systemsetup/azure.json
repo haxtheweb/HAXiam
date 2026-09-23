@@ -1,0 +1,10 @@
+{
+    "enabled": false,
+    "tenantId": "",
+    "clientId": "",
+    "clientSecret": "",
+    "redirectUri": "",
+    "issuer": "",
+    "scopes": "openid profile email",
+    "providerClass": "AzureOIDC"
+}

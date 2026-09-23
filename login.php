@@ -14,6 +14,34 @@ if (isset($IAM->enterprise->userVar)) {
 	header("Location: " . $IAM->enterprise->iamUrl . $IAM->enterprise->userVar);
 }
 else {
-	// do something to login
-	header("Location: " . $IAM->enterprise->login);
+	// Azure AD / OIDC bridge (issue #3070, _contracts/azure_json_schema.md
+	// invariant #7). When azure.json exists, AzureOIDC is loadable, and
+	// isEnabled() is true, kick the user into the Microsoft authorize URL
+	// via oauth-callback.php. Otherwise fall through to the legacy login
+	// redirect target (Shibboleth / Apache module), unchanged.
+	$__azure_login_redirect = false;
+	if (
+		file_exists(IAM_ROOT . '/_iamConfig/azure.json') &&
+		class_exists('AzureOIDC')
+	) {
+		try {
+			$__azure_login = AzureOIDC::load(IAM_ROOT . '/_iamConfig/azure.json');
+			if ($__azure_login->isEnabled()) {
+				$__azure_login_state = $__azure_login->generateState();
+				$_SESSION['oauth_state'] = $__azure_login_state;
+				$__azure_authorize_url = $__azure_login->buildAuthorizationUrl($__azure_login_state);
+				if (is_string($__azure_authorize_url) && $__azure_authorize_url !== '') {
+					header("Location: " . $__azure_authorize_url);
+					$__azure_login_redirect = true;
+				}
+			}
+		} catch (Throwable $__azure_login_err) {
+			// Fail closed: legacy redirect below.
+			$__azure_login_redirect = false;
+		}
+	}
+	unset($__azure_login, $__azure_login_state, $__azure_authorize_url, $__azure_login_err);
+	if (!$__azure_login_redirect) {
+		header("Location: " . $IAM->enterprise->login);
+	}
 }
