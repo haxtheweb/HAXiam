@@ -36,11 +36,16 @@ $IAM->enterprise->login = '/login.php';
 // keep working unchanged.
 $azure_enabled_bridge = false;
 if (
-  file_exists(__DIR__ . '/../../../_iamConfig/azure.json') &&
+  file_exists(IAM_ROOT . '/_iamConfig/azure.json') &&
   class_exists('AzureOIDC')
 ) {
   try {
-    $__azure_oidc = AzureOIDC::load(__DIR__ . '/../../../_iamConfig/azure.json');
+    // Use IAM_ROOT (defined in system/lib/IAM.php, included just before
+    // this file) so the path resolves correctly whether this boilerplate
+    // runs from its source location (system/boilerplate/systemsetup/) OR
+    // from the install copy (_iamConfig/iamConfig.php). A __DIR__-relative
+    // path breaks once the file is copied because __DIR__ changes.
+    $__azure_oidc = AzureOIDC::load(IAM_ROOT . '/_iamConfig/azure.json');
     if ($__azure_oidc->isEnabled()) {
       $azure_enabled_bridge = true;
       $IAM->enterprise->logout = $__azure_oidc->getLogoutUrl();
