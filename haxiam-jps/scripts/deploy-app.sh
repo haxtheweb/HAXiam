@@ -77,7 +77,7 @@ if [ -n "${LOCAL_STORAGE_LIMIT_GB:-}" ]; then
 fi
 
 # 4. Run the installer.
-haxecho "deploy-app: bash ${INSTALLER} ${INSTALL_FLAGS}"
+haxecho "deploy-app: running unified installer (Azure client secret redacted)"
 sudo bash "${INSTALLER}" ${INSTALL_FLAGS}
 
 # 5. Composer fallback if the installer didn't already vendor in.
