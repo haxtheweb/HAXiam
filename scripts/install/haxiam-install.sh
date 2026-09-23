@@ -151,11 +151,14 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-# Create the install root if it doesn't exist yet (a fresh install with a
-# non-default --ha targets a directory that won't exist yet). mkdir -p
-# before cd so set -e doesn't abort (review fix #8).
-# LEDGER and AZURE_CHECK are already absolute (${DIR}/../utilities/...).
-mkdir -p "${HA_DIR}"
+# The install root must already contain the HAXiam source (the deploy
+# script or operator clones the repo into it before running the installer).
+# Don't mkdir an empty dir — that would leave .version/composer.json/boilerplate
+# unreadable and produce a broken install (review fix #5).
+if [[ ! -d "${HA_DIR}" ]]; then
+  install_red "--ha directory ${HA_DIR} does not exist. Clone the HAXiam source there first, then run the installer."
+  exit 1
+fi
 cd "${HA_DIR}"
 
 # ---------------------------------------------------------------------------
@@ -366,7 +369,9 @@ if [[ ! -f _config/IAM ]]; then
   touch _config/IAM
   # The generated credentials are for first-login reference only; on a real
   # install the operator must rotate them via the IAM admin UI.
-  install_green "Initial credentials (rotate on first login): user=${user} pass=${pass}"
+  # Never echo the password — installer output is captured in CI/JPS/Docker
+  # logs (review fix #6).
+  install_green "Initial admin user created (user=${user}). Retrieve or rotate the password via the IAM admin UI or haxiam.sh menu."
 fi
 
 # Boilerplate copies - all guarded; invariant #1.
@@ -499,11 +504,17 @@ elif [[ -n "${CERT_PATH}" && -n "${KEY_PATH}" ]]; then
         AllowOverride All
         Require all granted
     </Directory>
+    <FilesMatch "\.php$">
+        SetHandler "proxy:unix:/run/php/${PHP_FPM}.sock|fcgi://localhost"
+    </FilesMatch>
     Protocols h2 http/1.1
 </VirtualHost>
 SSLVHOST
     a2enmod ssl >/dev/null 2>&1 || true
     a2ensite haxiam-ssl >/dev/null 2>&1 || true
+    # Reload Apache so the SSL vhost takes effect immediately (review
+    # previously-missed #1 — the earlier graceful ran before this vhost).
+    apache2ctl graceful 2>/dev/null || service apache2 reload 2>/dev/null || true
     install_green "SSL vhost configured with ${CERT_PATH} / ${KEY_PATH}."
     WROTE_ANY="yes"
 else
@@ -657,6 +668,9 @@ else
 fi
 if [[ "${AZURE_WAS_CONFIGURED}" == "yes" ]]; then
   install_bold "Azure redirect URI (register this in your Azure app registration):"
-  install_green "${REDIRECT_URI}"
+  # Read the redirectUri from the actual file on disk, not the computed
+  # value, in case we preserved an existing config (review previously-missed #2).
+  ACTUAL_REDIRECT_URI="$(python3 -c 'import json; print(json.load(open("_iamConfig/azure.json")).get("redirectUri",""))' 2>/dev/null || echo "${REDIRECT_URI}")"
+  install_green "${ACTUAL_REDIRECT_URI}"
 fi
 exit 0

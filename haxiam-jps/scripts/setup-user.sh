@@ -7,10 +7,6 @@
 # HAX_ADMIN_PASS) to the HAXcms core's _config/config.php, overriding the
 # random uuidgen credentials the installer's haxtheweb.sh generated.
 #
-# This mirrors haxtheweb.sh's sed approach but uses PHP for safe string
-# replacement so passwords with special characters (quotes, backslashes,
-# dollar signs) are handled correctly.
-#
 # Env vars (set by the JPS manifest):
 #   HAX_HAXIAM_DIR  - the install root (captured from deployApp's stdout)
 #   HAX_ADMIN_USER   - the admin username (from the JPS settings form)
@@ -48,31 +44,39 @@ if [ ! -f "${CONFIG_PHP}" ]; then
   exit 1
 fi
 
-# Use PHP to safely update the superUser credentials. Environment variables
-# avoid shell-escaping issues with passwords containing special characters.
-HAXCMS_CONFIG="${CONFIG_PHP}" \
-HAX_ADMIN_USER_VAL="${ADMIN_USER}" \
-HAX_ADMIN_PASS_VAL="${ADMIN_PASS}" \
-php -r '
-$f = getenv("HAXCMS_CONFIG");
+# Write a temp PHP script that safely updates the superUser credentials.
+# Using a temp file avoids the escaping nightmare of php -r inside bash
+# single quotes inside a heredoc — the $HAXCMS literal in the regex
+# needs careful escaping through 3 layers (bash → PHP string → regex).
+# With a file, PHP reads it directly with no shell interpretation.
+SETUP_SCRIPT="$(mktemp)"
+trap 'rm -f "${SETUP_SCRIPT}"' EXIT
+
+cat > "${SETUP_SCRIPT}" <<'PHPEOF'
+<?php
+$f = getenv('HAXCMS_CONFIG');
 $c = file_get_contents($f);
-$user = getenv("HAX_ADMIN_USER_VAL");
-$pass = getenv("HAX_ADMIN_PASS_VAL");
-// Use preg_replace_callback with var_export so passwords containing
-// quotes, backslashes, $1, etc. are safely escaped (review fix #5).
-// In PHP double-quoted strings, \\$HAXCMS interpolates the variable.
-// Use \$HAXCMS to get a literal $ in the regex (review fix #3).
+$user = getenv('HAX_ADMIN_USER_VAL');
+$pass = getenv('HAX_ADMIN_PASS_VAL');
+// Match the literal $HAXCMS->superUser->name = '...'; line.
+// Double-quoted PHP string so \x27 (single quote) works.
+// \\$ in PHP double-quoted = \$ in the regex = literal $ (review fix #2).
 $c = preg_replace_callback(
-    "/(\$HAXCMS->superUser->name = )\x27[^\x27]*\x27;/",
-    function($m) use ($user) { return $m[1] . var_export($user, true) . ";"; },
+    "/(\\\$HAXCMS->superUser->name = )\x27[^\x27]*\x27;/",
+    function($m) use ($user) { return $m[1] . var_export($user, true) . ';'; },
     $c
 );
 $c = preg_replace_callback(
-    "/(\$HAXCMS->superUser->password = )\x27[^\x27]*\x27;/",
-    function($m) use ($pass) { return $m[1] . var_export($pass, true) . ";"; },
+    "/(\\\$HAXCMS->superUser->password = )\x27[^\x27]*\x27;/",
+    function($m) use ($pass) { return $m[1] . var_export($pass, true) . ';'; },
     $c
 );
 file_put_contents($f, $c);
-'
+PHPEOF
+
+HAXCMS_CONFIG="${CONFIG_PHP}" \
+HAX_ADMIN_USER_VAL="${ADMIN_USER}" \
+HAX_ADMIN_PASS_VAL="${ADMIN_PASS}" \
+php "${SETUP_SCRIPT}"
 
 haxecho "setup-user: admin credentials applied (user=${ADMIN_USER})"

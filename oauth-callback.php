@@ -93,6 +93,11 @@ if (!is_string($user) || trim($user) === '') {
 // iamConfig.php references $HAXCMS (via $IAM->HAXcmsInit($HAXCMS) and the
 // session-routing logic). Without bootstrapHAX, $HAXCMS is undefined and
 // PHP 8 raises a TypeError (review fix #6).
+// Regenerate the session ID to prevent session fixation — an attacker
+// who learned the pre-login session ID cannot reuse it after auth
+// (review fix #3).
+session_regenerate_id(true);
+
 $_SESSION['HAXIAM_USER'] = $user;
 
 include_once IAM_ROOT . '/cores/' . HAXIAM_ACTIVE_CORE . '/system/backend/php/bootstrapHAX.php';
@@ -103,7 +108,12 @@ include_once IAM_ROOT . '/_iamConfig/iamConfig.php';
 if (method_exists($HAXCMS, 'getRefreshToken') && method_exists($HAXCMS, 'setRefreshTokenCookie')) {
     $HAXCMS->setRefreshTokenCookie($HAXCMS->getRefreshToken($user));
 } else if (method_exists($HAXCMS, 'getRefreshToken')) {
-    setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($user), $_expires = 0, $_path = '/', $_domain = '', $_secure = false, $_httponly = true);
+    // Set the Secure flag based on whether the request is over HTTPS
+    // so the bearer token isn't sent over a subsequent HTTP request
+    // (review fix #4).
+    $_isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+    setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($user), $_expires = 0, $_path = '/', $_domain = '', $_secure = $_isSecure, $_httponly = true);
 }
 
 // Liberate the user directory if it doesn't exist yet.

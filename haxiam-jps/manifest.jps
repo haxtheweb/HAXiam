@@ -231,5 +231,5 @@ actions:
 
 success:
   color: green
-  message: "{{ANSI_GREEN}}HAXiam installed.{{ANSI_RESET}}\n\nAdmin URL:\n  https://${env.domain}/\nUsername:\n  ${globals.HAX_ADMIN_USER}\nPassword:\n  ${globals.HAX_ADMIN_PASS}\nAzure AD redirect URI (if SSO enabled):\n  https://${env.domain}/oauth-callback.php\n"
+  message: "{{ANSI_GREEN}}HAXiam installed.{{ANSI_RESET}}\n\nAdmin URL:\n  https://${env.domain}/\nUsername:\n  ${globals.HAX_ADMIN_USER}\nSet or retrieve your password via the hosting provider's account management interface.\nAzure AD redirect URI (if SSO enabled):\n  https://${env.domain}/oauth-callback.php\n"
   attachToPHPLink: false
