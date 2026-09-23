@@ -1,0 +1,242 @@
+# Jelastic JPS manifest for HAXiam — see haxiam-jps/README.md for the
+# human-facing description and ../_contracts/ for the locked interfaces
+# this manifest implements against. Pure YAML: validated with
+# `python3 -c "import yaml; yaml.safe_load(open('manifest.jps'))"`.
+
+type: install
+id: haxiam
+version: 1.0.0
+
+# Where Jelastic pulls helper scripts from. The scripts/ folder in this
+# repo on this branch is mirrored under baseUrl/scripts/.
+baseUrl: https://raw.githubusercontent.com/haxtheweb/HAXiam/plan/3070-haxiam-jps/haxiam-jps/
+
+ssl: true
+skipNodeEmails: true
+
+displayName: HAXiam
+description: |
+  One-shot HAXiam install on Reclaim Cloud / Jelastic: Apache + PHP 8.3 + the
+  HAXiam app server, optionally terminated by the community Let's Encrypt
+  addon and authenticated via Azure AD SSO.
+
+# -----------------------------------------------------------------------------
+# Topology
+# -----------------------------------------------------------------------------
+
+nodes:
+  - nodeType: apache2
+    nodeGroup: cp
+    displayName: HAXiam
+    image: ubuntu:24.04
+    count: 1
+    fixed: true
+
+# External JPS addons this manifest may invoke. lets-encrypt is gated by
+# the `skipLE` settings checkbox at install time.
+addons:
+  - id: lets-encrypt
+    name: Let's Encrypt
+    type: jps
+    link: https://github.com/jelastic-public/lets-encrypt/blob/master/manifest.jps
+
+# -----------------------------------------------------------------------------
+# Globals
+# -----------------------------------------------------------------------------
+
+globals:
+  HAX_ADMIN_USER:
+    type: string
+    default: haxadmin
+  HAX_ADMIN_PASS:
+    type: string
+    isPassword: true
+    default: ${fn.password(10)}
+
+# -----------------------------------------------------------------------------
+# Settings form
+# -----------------------------------------------------------------------------
+
+settings:
+  fields:
+    - name: skipLE
+      type: boolean
+      caption: "Skip Let's Encrypt (Reclaim Cloud / Jelastic already manages SSL)"
+      default: false
+
+    - name: configureAzure
+      type: boolean
+      caption: "Configure Azure AD SSO on this install"
+      default: false
+
+    # Four sub-fields appearing only when configureAzure is checked,
+    # WordPress-JPS style: showIf on the parent checkbox.
+    - showIf:
+        configureAzure: true
+      fields:
+        - name: azureTenantId
+          type: string
+          caption: "Azure AD Tenant ID"
+          required: true
+        - name: azureClientId
+          type: string
+          caption: "Azure App Registration Client ID"
+          required: true
+        - name: azureClientSecret
+          type: string
+          inputType: password
+          caption: "Azure App Registration Client Secret (encrypted at rest)"
+          required: true
+        - name: azureRedirectDomain
+          type: string
+          caption: "Public domain for Azure redirect URI (auto-detect if blank)"
+          default: ""
+
+    - name: localStorageLimit
+      type: integer
+      caption: "Local storage limit (GB)"
+      default: 20
+      min: 1
+      max: 1024
+
+# -----------------------------------------------------------------------------
+# Actions — the ordered sequence described in
+# /_contracts/installer_flag_surface.md.
+# -----------------------------------------------------------------------------
+
+actions:
+
+  # 1. configSystem. Install distro packages the unified installer expects
+  #    to find + enable every Apache module the unified installer
+  #    references in its vhost template.
+  - name: configSystem
+    cmd[cp]: |
+      set -eu
+      export DEBIAN_FRONTEND=noninteractive
+      if ! grep -q '^VERSION_ID=' /etc/os-release; then
+        echo "[jps] ubuntu image missing /etc/os-release" 1>&2
+        exit 1
+      fi
+      apt-get update
+      apt-get install -y \
+        php8.3-fpm php8.3-zip php8.3-gd php8.3-dom php8.3-mbstring php8.3-yaml \
+        apache2 brotli git
+      a2enmod proxy_fcgi mpm_event http2 ssl rewrite headers brotli
+      a2dismod mpm_prefork status
+      a2enconf php8.3-fpm
+      printf 'Protocols h2 http/1.1\n' > /etc/apache2/conf-available/http2.conf
+      a2enconf http2
+      service apache2 restart
+      echo "[jps] configSystem done"
+
+  # 2. deployApp. Hand off to the unified installer. Env vars carried
+  #    from the form fields map 1:1 to the locked installer flags.
+  - name: deployApp
+    script: deploy-app.sh
+    env:
+      AZURE_CONFIGURED: ${settings.configureAzure}
+      AZ_TENANT:        ${settings.azureTenantId}
+      AZ_CLIENT:        ${settings.azureClientId}
+      AZ_SECRET:        ${settings.azureClientSecret}
+      AZ_DOMAIN:        ${settings.azureRedirectDomain}
+      LOCAL_STORAGE_LIMIT_GB: ${settings.localStorageLimit}
+
+  # 3. setupUser. Runs three small steps glued back-to-back:
+  #    (a) drop a token that install.php will validate server-side;
+  #    (b) POST user + passphrase + install_token to advance to step 4;
+  #    (c) rm the token so it's never on disk for longer than the POST.
+  - name: setupUser_dropInstallToken
+    script: install-token.sh
+    setEnv:
+      HAX_INSTALL_TOKEN: ${response}
+
+  - name: setupUser_advanceInstall
+    cmd[cp]: |
+      set -eu
+      IAM_DIR="${HAX_HAXIAM_DIR:-/var/www/iam}"
+      TOKEN=$(cat "${IAM_DIR}/_installtoken.txt")
+      # The unified installer's install.php lives in this same webroot
+      # (default: /var/www/iam/install.php) so 127.0.0.1 is enough; we
+      # also try hostname -I as a fallback for ALT webroot layouts.
+      TARGET="http://127.0.0.1/install.php?op=advance&toStep=4"
+      if ! curl -fsS -m 30 -o /dev/null "$TARGET"; then
+        HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        [ -n "$HOST_IP" ] && TARGET="http://${HOST_IP}/install.php?op=advance&toStep=4"
+      fi
+      RESP=$(curl -sS -m 60 \
+        -d "user=${HAX_ADMIN_USER}" \
+        -d "passphrase=${HAX_ADMIN_PASS}" \
+        -d "install_token=${TOKEN}" \
+        "$TARGET")
+      echo "[jps] install.php response: ${RESP}"
+      if printf '%s' "${RESP}" | grep -qiE 'fail|error|invalid|expired'; then
+        echo "[jps] install.php advance failed: ${RESP}" 1>&2
+        exit 1
+      fi
+
+  - name: setupUser_cleanupInstallToken
+    cmd[cp]: bash -c 'sudo rm -f /var/www/iam/_installtoken.txt'
+
+  # 4. installLE. Only when Skip Let's Encrypt was UNCHECKED. Hand off to
+  #    the community lets-encrypt JPS on env.domain.
+  - if: '${settings.skipLE} == "false"'
+    name: installLE
+    installAddon:
+      id: lets-encrypt
+      name: "Let's Encrypt"
+    setAddonEnv:
+      env_domain: ${env.domain}
+
+  # 5. configureAzure. Only when Configure Azure AD SSO was CHECKED.
+  #    Writes _iamConfig/azure.json verbatim to the locked schema, sets
+  #    0600, then runs scripts/utilities/check-azure-sso.sh which the
+  #    azure-oidc child owns.
+  - if: '${settings.configureAzure} == "true"'
+    name: configureAzure
+    cmd[cp]: |
+      set -eu
+      IAM_DIR="${HAX_HAXIAM_DIR:-/var/www/iam}"
+      mkdir -p "${IAM_DIR}/_iamConfig"
+
+      TENANT="${settings.azureTenantId}"
+      CLIENT="${settings.azureClientId}"
+      SECRET="${settings.azureClientSecret}"
+      DOM="${settings.azureRedirectDomain}"
+      [ -n "$DOM" ] || DOM="${env.domain}"
+      [ -n "$DOM" ] || HOST_FALLBACK="$(hostname -f 2>/dev/null || hostname)"
+      [ -n "$DOM" ] && HOST_BASE="$DOM" || HOST_BASE="${HOST_FALLBACK}"
+
+      REDIRECT_URI="https://${HOST_BASE}/oauth-callback.php"
+      ISSUER="https://login.microsoftonline.com/${TENANT}/v2.0"
+      SCOPES="openid profile email"
+
+      {
+        printf '{\n'
+        printf '    "enabled": true,\n'
+        printf '    "tenantId": "%s",\n'        "$TENANT"
+        printf '    "clientId": "%s",\n'        "$CLIENT"
+        printf '    "clientSecret": "%s",\n'    "$SECRET"
+        printf '    "redirectUri": "%s",\n'     "$REDIRECT_URI"
+        printf '    "issuer": "%s",\n'          "$ISSUER"
+        printf '    "scopes": "%s",\n'          "$SCOPES"
+        printf '    "providerClass": "AzureOIDC"\n'
+        printf '}\n'
+      } > "${IAM_DIR}/_iamConfig/azure.json"
+      chmod 0600 "${IAM_DIR}/_iamConfig/azure.json"
+
+      # Validation utility owned by the azure-oidc child.
+      if [ -x "${IAM_DIR}/scripts/utilities/check-azure-sso.sh" ]; then
+        bash "${IAM_DIR}/scripts/utilities/check-azure-sso.sh"
+      else
+        printf '[jps] configureAzure: %s not found, skipping live JWKS check\n' \
+          "scripts/utilities/check-azure-sso.sh" 1>&2
+      fi
+
+# -----------------------------------------------------------------------------
+# Success — green block the operator sees after install completes.
+# -----------------------------------------------------------------------------
+
+success:
+  color: green
+  message: "{{ANSI_GREEN}}HAXiam installed.{{ANSI_RESET}}\n\nAdmin URL:\n  https://${env.domain}/\nUsername:\n  ${globals.HAX_ADMIN_USER}\nPassword:\n  ${globals.HAX_ADMIN_PASS}\n"
+  attachToPHPLink: false
