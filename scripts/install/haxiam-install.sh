@@ -146,6 +146,21 @@ if [[ ${AZ_FLAGS_SET} -gt 0 ]] && [[ ${AZ_FLAGS_SET} -ne 3 ]]; then
   exit 1
 fi
 
+# If --domain was given but --skip-le is set, write the runtime IAM domain
+# config so iamConfig.php uses the real domain instead of the placeholder
+# (review fix #7).
+if [[ -n "${DOMAIN}" ]] && [[ "${DO_LE}" == "skip" ]] && [[ ! -f /var/IAMCONFIG.php ]]; then
+  install_green "Writing /var/IAMCONFIG.php for domain ${DOMAIN} (--skip-le mode)."
+  cat > /var/IAMCONFIG.php <<IAMCFG
+<?php
+define('IAM_PROTOCOL', 'https://');
+define('IAM_BASE_DOMAIN', '${DOMAIN}');
+define('IAM_EMPOWERED', 'iam');
+define('IAM_PRIVATE', 'courses');
+define('IAM_OPEN', 'oer');
+IAMCFG
+fi
+
 if [[ $EUID -ne 0 ]]; then
   install_red "Please run as root (sudo bash $(basename "${BASH_SOURCE[0]}") ...)."
   exit 1
@@ -196,10 +211,10 @@ case "${RESOLVED_DISTRO}" in
   # Ubuntu 20.04's default repos only have PHP 7.4, but composer.json
   # requires ^8.1. We install php8.1 from the ondrej/php PPA (added in
   # phase 2 before apt-get install).
-  ubuntu-20.04) PHP_FPM="php8.1-fpm"; PHP_PKGS="php8.1-fpm php8.1-zip php8.1-gd php8.1-dom php8.1-mbstring php8.1-yaml" ;;
-  ubuntu-22.04) PHP_FPM="php8.1-fpm"; PHP_PKGS="php8.1-fpm php8.1-zip php8.1-gd php8.1-dom php8.1-mbstring php8.1-yaml" ;;
-  ubuntu-24.04) PHP_FPM="php8.3-fpm"; PHP_PKGS="php8.3-fpm php8.3-zip php8.3-gd php8.3-dom php8.3-mbstring php8.3-yaml" ;;
-  ubuntu-26.04) PHP_FPM="php8.5-fpm"; PHP_PKGS="php8.5-fpm php8.5-zip php8.5-gd php8.5-dom php8.5-mbstring php8.5-yaml" ;;
+  ubuntu-20.04) PHP_FPM="php8.1-fpm"; PHP_PKGS="php8.1-fpm php8.1-zip php8.1-gd php8.1-xml php8.1-curl php8.1-mbstring php8.1-yaml" ;;
+  ubuntu-22.04) PHP_FPM="php8.1-fpm"; PHP_PKGS="php8.1-fpm php8.1-zip php8.1-gd php8.1-xml php8.1-curl php8.1-mbstring php8.1-yaml" ;;
+  ubuntu-24.04) PHP_FPM="php8.3-fpm"; PHP_PKGS="php8.3-fpm php8.3-zip php8.3-gd php8.3-xml php8.3-curl php8.3-mbstring php8.3-yaml" ;;
+  ubuntu-26.04) PHP_FPM="php8.5-fpm"; PHP_PKGS="php8.5-fpm php8.5-zip php8.5-gd php8.5-xml php8.5-curl php8.5-mbstring php8.5-yaml" ;;
 esac
 
 # Disk space - need at least 2 GB free for HAXcms-core + HAXiam + vendor.
@@ -280,10 +295,12 @@ else
 fi
 
 # Apache modules - enabled on every distro, idempotent.
-a2enmod proxy_fcgi ssl rewrite headers brotli http2 >/dev/null 2>&1 || true
-a2dismod mpm_prefork >/dev/null 2>&1 || true
-a2enmod mpm_event >/dev/null 2>&1 || true
-a2enconf ${PHP_FPM} >/dev/null 2>&1 || true
+# Required modules — failures here mean PHP won't serve, so exit 2
+# (review fix #8). Only already-enabled/already-disabled cases are safe to ignore.
+a2enmod proxy_fcgi ssl rewrite headers brotli http2 || { install_red "a2enmod failed."; exit 2; }
+a2dismod mpm_prefork 2>/dev/null || true
+a2enmod mpm_event || { install_red "a2enmod mpm_event failed."; exit 2; }
+a2enconf ${PHP_FPM} || { install_red "a2enconf ${PHP_FPM} failed."; exit 2; }
 if [[ ! -e /etc/apache2/conf-available/http2.conf ]]; then
   echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf
 fi
@@ -294,6 +311,9 @@ a2enconf http2 >/dev/null 2>&1 || true
 # continues serving /var/www/html (the default site) and a successful
 # installer does not make HAXiam reachable (review fix #9).
 VHOST_CONF="/etc/apache2/sites-available/haxiam.conf"
+# Only write the vhost if it doesn't already exist (review previously-missed #4:
+# unconditionally truncating would discard operator customizations on reruns).
+if [[ ! -f "${VHOST_CONF}" ]]; then
 cat > "${VHOST_CONF}" <<VHOST
 <VirtualHost *:80>
     ServerAdmin webmaster@localhost
@@ -303,12 +323,20 @@ cat > "${VHOST_CONF}" <<VHOST
         AllowOverride All
         Require all granted
     </Directory>
+    # Deny access to _iamConfig — it contains azure.json (client secret),
+    # config.cfg, and other private data (review fix #10).
+    <Directory ${HA_DIR}/_iamConfig>
+        Require all denied
+    </Directory>
     <FilesMatch "\.php$">
         SetHandler "proxy:unix:/run/php/${PHP_FPM}.sock|fcgi://localhost"
     </FilesMatch>
     Protocols h2 http/1.1
 </VirtualHost>
 VHOST
+else
+  install_green "${VHOST_CONF} already exists — preserving operator customizations."
+fi
 a2dissite 000-default >/dev/null 2>&1 || true
 a2ensite haxiam >/dev/null 2>&1 || true
 # Reload Apache so the new vhost takes effect immediately on a running
@@ -365,7 +393,14 @@ fi
 if [[ ! -f _config/IAM ]]; then
   user="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)"
   pass="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)"
-  bash scripts/haxtheweb.sh "${user}" "${pass}"
+  # Redirect haxtheweb.sh's stdout (which prints the password in its
+  # completion banner) to a log file so it doesn't leak into CI/JPS/Docker
+  # logs (review fix #11). Preserve exit status.
+  bash scripts/haxtheweb.sh "${user}" "${pass}" >/tmp/haxtheweb-bootstrap.log 2>&1 || {
+    install_red "haxtheweb.sh failed."
+    cat /tmp/haxtheweb-bootstrap.log >&2
+    exit 3
+  }
   touch _config/IAM
   # The generated credentials are for first-login reference only; on a real
   # install the operator must rotate them via the IAM admin UI.
@@ -399,7 +434,19 @@ copy_if_absent "${HAXCMS_DIR}/_config/SALT.txt"             "_iamConfig/SALT.txt
 # is false) and leaves _iamConfig/iamConfig.php missing, which 500s the site
 # (Undefined constant IAM_PROTOCOL). Source from the install root instead.
 copy_if_absent "${HA_DIR}/system/boilerplate/systemsetup/HAXcmsConfig.php" "_iamConfig/HAXcmsConfig.php"
+# iamConfig.php: copy_if_absent preserves operator customizations, but a
+# legacy install won't have the Azure bridge. If the existing file doesn't
+# contain 'AzureOIDC', it predates this feature — merge the bridge by
+# overwriting with the new boilerplate (review fix #12). We back up first.
+if [[ -f "_iamConfig/iamConfig.php" ]] && ! grep -q 'AzureOIDC' "_iamConfig/iamConfig.php" 2>/dev/null; then
+  install_green "_iamConfig/iamConfig.php predates Azure bridge — upgrading."
+  bash "${LEDGER}" backup "_iamConfig/iamConfig.php" >> /dev/null
+  cp "${HA_DIR}/system/boilerplate/systemsetup/iamConfig.php" "_iamConfig/iamConfig.php"
+  WROTE_ANY="yes"
+  bash "${LEDGER}" wrote "_iamConfig/iamConfig.php" >> /dev/null
+else
 copy_if_absent "${HA_DIR}/system/boilerplate/systemsetup/iamConfig.php"    "_iamConfig/iamConfig.php"
+fi
 
 if [[ ! -f "_iamConfig/azure.json" ]]; then
   # Use the boilerplate template if azure-oidc has shipped it; otherwise
@@ -583,11 +630,11 @@ with open(p, "w") as f:
 PY
   else
     # perl fallback - undocumented in the contract but better than failing.
-    perl -e 'use JSON::PP; my $j = { enabled=>JSON::PP::true, tenantId=>$ENV{AZ_TENANT_VAL}, clientId=>$ENV{AZ_CLIENT_VAL}, clientSecret=>$ENV{AZ_SECRET_VAL}, redirectUri=>$ENV{REDIRECT_VAL}, issuer=>$ENV{ISSUER_VAL}, scopes=>$ENV{SCOPES_VAL}, providerClass=>"AzureOIDC" }; open my $fh, ">", $ENV{JSON_FILE} or die $!; print $fh JSON::PP::encode_json($j); close $fh;' \
-      JSON_FILE="${TMP_AZ_JSON}" \
-      AZ_TENANT_VAL="${AZ_TENANT}" AZ_CLIENT_VAL="${AZ_CLIENT}" AZ_SECRET_VAL="${AZ_SECRET}" \
+    AZ_TENANT_VAL="${AZ_TENANT}" AZ_CLIENT_VAL="${AZ_CLIENT}" AZ_SECRET_VAL="${AZ_SECRET}" \
       REDIRECT_VAL="${REDIRECT_URI}" ISSUER_VAL="https://login.microsoftonline.com/${AZ_TENANT}/v2.0" \
-      SCOPES_VAL="${AZ_SCOPES}" || { rm -f "${TMP_AZ_JSON}"; install_red "Neither python3 nor perl available to write azure.json."; exit 5; }
+      SCOPES_VAL="${AZ_SCOPES}" JSON_FILE="${TMP_AZ_JSON}" \
+      perl -e 'use JSON::PP; my $j = { enabled=>JSON::PP::true, tenantId=>$ENV{AZ_TENANT_VAL}, clientId=>$ENV{AZ_CLIENT_VAL}, clientSecret=>$ENV{AZ_SECRET_VAL}, redirectUri=>$ENV{REDIRECT_VAL}, issuer=>$ENV{ISSUER_VAL}, scopes=>$ENV{SCOPES_VAL}, providerClass=>"AzureOIDC" }; open my $fh, ">", $ENV{JSON_FILE} or die $!; print $fh JSON::PP::encode_json($j); close $fh;' \
+      || { rm -f "${TMP_AZ_JSON}"; install_red "Neither python3 nor perl available to write azure.json."; exit 5; }
   fi
   # Idempotency: if azure.json already exists with enabled=true, preserve
   # the operator's existing config instead of overwriting it (review fix #7).

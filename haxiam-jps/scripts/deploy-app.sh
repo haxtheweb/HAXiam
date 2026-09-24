@@ -41,10 +41,17 @@ mkdir -p "${WEBROOT}"
 BRANCH="${HAX_HAXIAM_BRANCH:-plan/3070-haxiam-jps}"
 REPO="${HAX_HAXIAM_REPO:-https://github.com/haxtheweb/HAXiam.git}"
 
+# Clone into a temp dir first, then merge into the webroot (review
+# previously-missed #3: git clone refuses to clone into a non-empty dir,
+# and the Jelastic webroot may already contain default files).
 if [ ! -d "${WEBROOT}/.git" ]; then
-  haxecho "deploy-app: cloning HAXiam (${BRANCH}) into ${WEBROOT}"
-  cd "$(dirname "${WEBROOT}")"
-  git clone --branch "${BRANCH}" --depth 1 "${REPO}" "$(basename "${WEBROOT}")"
+  haxecho "deploy-app: cloning HAXiam (${BRANCH})"
+  CLONE_TMP="$(mktemp -d)"
+  git clone --branch "${BRANCH}" --depth 1 "${REPO}" "${CLONE_TMP}/haxiam"
+  # Copy all files (including dotfiles) into the webroot, preserving
+  # any existing files the operator may have placed there.
+  cp -a "${CLONE_TMP}/haxiam/." "${WEBROOT}/"
+  rm -rf "${CLONE_TMP}"
   cd "${WEBROOT}"
 else
   haxecho "deploy-app: ${WEBROOT} already has a git working tree, leaving it"

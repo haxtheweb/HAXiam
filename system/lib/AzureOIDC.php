@@ -55,11 +55,11 @@ class AzureOIDC
 {
     /**
      * The decoded `_iamConfig/azure.json` payload (stdClass).
-     * Caller code MUST treat all fields as read-only; the class itself never
-     * mutates config after load().
+     * Kept protected so var_dump/exception contexts don't expose
+     * clientSecret (review fix #14). Use getConfigField() for access.
      * @var object|null
      */
-    public $config;
+    protected $config;
 
     /**
      * Filesystem path the most recent load() read from.
@@ -103,6 +103,53 @@ class AzureOIDC
     {
         $this->config = new stdClass();
         $this->path = null;
+    }
+
+    /**
+     * Safe accessor for config fields. Returns null for missing fields
+     * so callers don't need to access $this->config directly (which
+     * would expose clientSecret via var_dump/exception contexts).
+     *
+     * @param string $field
+     * @return mixed|null
+     */
+    public function getConfigField($field)
+    {
+        if (!is_object($this->config) || !isset($this->config->{$field})) {
+            return null;
+        }
+        return $this->config->{$field};
+    }
+
+    /**
+     * Set a config field (used by tests to mutate config without
+     * directly accessing the protected $config property).
+     *
+     * @param string $field
+     * @param mixed $value
+     */
+    public function setConfigField($field, $value)
+    {
+        if (!is_object($this->config)) {
+            $this->config = new stdClass();
+        }
+        $this->config->{$field} = $value;
+    }
+
+    /**
+     * Redacted debug representation — never exposes clientSecret.
+     * @return array
+     */
+    public function __debugInfo()
+    {
+        return array(
+            'path' => $this->path,
+            'enabled' => $this->getConfigField('enabled'),
+            'tenantId' => $this->getConfigField('tenantId'),
+            'clientId' => $this->getConfigField('clientId'),
+            'clientSecret' => '<redacted>',
+            'redirectUri' => $this->getConfigField('redirectUri'),
+        );
     }
 
     // Walks up from system/lib/AzureOIDC.php to the HAXiam root to find

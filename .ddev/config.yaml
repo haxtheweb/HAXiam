@@ -61,12 +61,16 @@ hooks:
   post-start:
   - exec: |
       # DDEV's web container may be Debian-based, which the installer
-      # doesn't support. Best-effort: try the installer, but don't fail
-      # ddev start if it can't resolve the distro. DDEV mounts the
-      # project at /var/www/html, not /var/www/iam (review fix #9).
+      # doesn't support. Gate on whether the container is Ubuntu before
+      # running the installer; skip gracefully if not (review fix #15).
+      # DDEV mounts the project at /var/www/html, not /var/www/iam.
       if ! grep -Eq '^[[:space:]]*haxiam[[:space:]]*=' /var/www/html/_iamConfig/config.cfg 2>/dev/null; then
-        echo "[.ddev] First start — running scripts/install/haxiam-install.sh"
-        sudo bash /var/www/html/scripts/install/haxiam-install.sh --distro ubuntu-24.04 --skip-le --non-interactive --ha /var/www/html || echo "[.ddev] Installer could not run on this container's OS — try manually."
+        if grep -q '^ID=ubuntu' /etc/os-release 2>/dev/null; then
+          echo "[.ddev] First start — running scripts/install/haxiam-install.sh"
+          sudo bash /var/www/html/scripts/install/haxiam-install.sh --distro ubuntu-24.04 --skip-le --non-interactive --ha /var/www/html || echo "[.ddev] Installer failed — check logs."
+        else
+          echo "[.ddev] Web container is not Ubuntu — skipping installer. Run manually if needed."
+        fi
       else
         echo "[.ddev] Existing install detected at /var/www/html — skipping installer."
       fi

@@ -118,13 +118,13 @@ try {
     /** @var AzureOIDC $provider */
     $provider = AzureOIDC::load($sandbox . '/_iamConfig/azure.json');
     check(
-        is_object($provider) && isset($provider->config->tenantId),
+        is_object($provider) && $provider->getConfigField('tenantId') !== null,
         'AzureOIDC::load returns instance with config.tenantId',
         $passes,
         $failures
     );
     check(
-        $provider->config->clientSecret === 'supersecret-very-private',
+        $provider->getConfigField('clientSecret') === 'supersecret-very-private',
         'AzureOIDC::load preserves clientSecret value (internal field)',
         $passes,
         $failures
@@ -153,9 +153,7 @@ try {
     // Invariant #2: isEnabled requires all four scalar fields + enabled:true
     check($provider->isEnabled() === true, 'AzureOIDC::isEnabled true for full-config', $passes, $failures);
 
-    $cfg = $provider->config;
-    $cfg->clientSecret = '';
-    $provider->config = $cfg;
+    $provider->setConfigField('clientSecret', '');
     check($provider->isEnabled() === false, 'AzureOIDC::isEnabled false when clientSecret empty', $passes, $failures);
 
     makeAzureJson($sandbox, false);
@@ -176,7 +174,7 @@ try {
     );
 
     $provider = AzureOIDC::load($sandbox . '/_iamConfig/azure.json');
-    $provider->config->issuer = 'https://login.microsoftonline.com/custom-tenant/v2.0';
+    $provider->setConfigField('issuer', 'https://login.microsoftonline.com/custom-tenant/v2.0');
     check(
         $provider->getExpectedIssuer() === 'https://login.microsoftonline.com/custom-tenant/v2.0',
         'AzureOIDC::getExpectedIssuer honors explicit issuer override',
@@ -184,7 +182,7 @@ try {
         $failures
     );
     // restore
-    $provider->config->issuer = '';
+    $provider->setConfigField('issuer', '');
 
     // getLogoutUrl always returns a tenant-anchored Microsoft logout URL.
     $provider = AzureOIDC::load($sandbox . '/_iamConfig/azure.json');

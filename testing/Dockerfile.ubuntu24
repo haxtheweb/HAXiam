@@ -85,7 +85,10 @@ RUN set -eux; \
         '        AllowOverride All' \
         '        Require all granted' \
         '    </Directory>' \
-        '    <FilesMatch "\.php$">' \
+        '    <Directory /var/www/iam/_iamConfig>' \
+        '        Require all denied' \
+        '    </Directory>' \
+        '    <FilesMatch "\\.php$">' \
         '        SetHandler "proxy:unix:/run/php/php8.3-fpm.sock|fcgi://localhost"' \
         '    </FilesMatch>' \
         '</VirtualHost>' \

@@ -36,12 +36,18 @@ else {
 				}
 			}
 		} catch (Throwable $__azure_login_err) {
-			// Fail closed: legacy redirect below.
-			$__azure_login_redirect = false;
+			// Azure is enabled but URL construction failed — redirect to
+			// an error page, NOT to /login.php (which would loop infinitely
+			// since it would try Azure again) (review fix #6).
+			header("Location: login.php?sso_error=azure_url_failed");
+			exit;
 		}
 	}
 	unset($__azure_login, $__azure_login_state, $__azure_authorize_url, $__azure_login_err);
 	if (!$__azure_login_redirect) {
+		// Only use the legacy login target when Azure is NOT enabled.
+		// When Azure is enabled but returned false (e.g. not configured),
+		// the enterprise->login redirect is safe.
 		header("Location: " . $IAM->enterprise->login);
 	}
 }

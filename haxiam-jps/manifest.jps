@@ -103,13 +103,15 @@ onInstall:
   - configSystem
   - deployApp
   - setupUser
-  - if: '${settings.skipLE} == "false"'
+  - if:
+      skipLE: false
     installAddon:
       id: lets-encrypt
       name: "Let's Encrypt"
     setAddonEnv:
       env_domain: ${env.domain}
-  - if: '${settings.configureAzure} == "true"'
+  - if:
+      configureAzure: true
     configureAzure: {}
 
 # -----------------------------------------------------------------------------
@@ -157,7 +159,8 @@ actions:
   #    echoes the discovered webroot to stdout; setEnv captures it as
   #    HAX_HAXIAM_DIR for subsequent actions (review fix #3).
   deployApp:
-    script: scripts/deploy-app.sh
+    cmd[cp]: |
+      bash ${baseUrl}/scripts/deploy-app.sh
     env:
       AZURE_CONFIGURED: ${settings.configureAzure}
       AZ_TENANT:        ${settings.azureTenantId}
@@ -171,7 +174,8 @@ actions:
   #    HAXcms core's _config/config.php, overriding the random uuidgen
   #    credentials the installer generated (review fix #15).
   setupUser:
-    script: scripts/setup-user.sh
+    cmd[cp]: |
+      bash ${baseUrl}/scripts/setup-user.sh
     env:
       HAX_ADMIN_USER: ${globals.HAX_ADMIN_USER}
       HAX_ADMIN_PASS: ${globals.HAX_ADMIN_PASS}
@@ -201,14 +205,16 @@ actions:
       SCOPES="openid profile email"
 
       # python3 -c with json.dump for proper JSON escaping.
+      # Write to a temp file first, then atomically rename (review
+      # previously-missed #1: direct open() can leave a truncated file
+      # if Apache reads mid-write).
       AZ_TENANT_VAL="$TENANT" AZ_CLIENT_VAL="$CLIENT" AZ_SECRET_VAL="$SECRET" \
         REDIRECT_VAL="$REDIRECT_URI" ISSUER_VAL="$ISSUER" SCOPES_VAL="$SCOPES" \
-        JSON_FILE="${IAM_DIR}/_iamConfig/azure.json" \
+        JSON_FILE="${IAM_DIR}/_iamConfig/azure.json.tmp.$$" \
         python3 -c 'import json,os; d={"enabled":True,"tenantId":os.environ["AZ_TENANT_VAL"],"clientId":os.environ["AZ_CLIENT_VAL"],"clientSecret":os.environ["AZ_SECRET_VAL"],"redirectUri":os.environ["REDIRECT_VAL"],"issuer":os.environ["ISSUER_VAL"],"scopes":os.environ["SCOPES_VAL"],"providerClass":"AzureOIDC"}; f=open(os.environ["JSON_FILE"],"w"); json.dump(d,f,indent=4); f.write(chr(10)); f.close()'
-      # 0600 + chown www-data: owner-only access for the FPM worker
-      # (review fix #3 — satisfies both readability and secrecy).
-      chmod 0600 "${IAM_DIR}/_iamConfig/azure.json"
-      chown www-data:www-data "${IAM_DIR}/_iamConfig/azure.json"
+      chmod 0600 "${IAM_DIR}/_iamConfig/azure.json.tmp.$$"
+      chown www-data:www-data "${IAM_DIR}/_iamConfig/azure.json.tmp.$$"
+      mv "${IAM_DIR}/_iamConfig/azure.json.tmp.$$" "${IAM_DIR}/_iamConfig/azure.json"
 
       # Validation utility — run from IAM_DIR so check-azure-sso.sh
       # finds _iamConfig/azure.json relative to the install root
