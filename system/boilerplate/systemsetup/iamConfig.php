@@ -25,6 +25,45 @@ $IAM->HAXcmsInit($HAXCMS);
 $IAM->enterprise->iamUrl = IAM_PROTOCOL . IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN . '/';
 $IAM->enterprise->logout = 'https://login.microsoftonline.com/your_tenant_id/oauth2/v2.0/logout';
 $IAM->enterprise->login = '/login.php';
+// --------------------------------------------------------------------------
+// Azure AD / OIDC bridge (issue #3070, _contracts/azure_json_schema.md).
+// If _iamConfig/azure.json exists AND AzureOIDC::isEnabled() returns true,
+// we treat $_SESSION['HAXIAM_USER'] set by oauth-callback.php as the
+// authoritative source for $_SESSION['HAXIAM_USER'] below, AND we override
+// the logout URL to the real tenant logout URL (no more 'your_tenant_id'
+// placeholder). The legacy REMOTE_USER / PHP_AUTH_USER fallback block a
+// few lines down stays untouched so Shibboleth / Apache-module installs
+// keep working unchanged.
+// Load the AzureOIDC class so class_exists() can find it. composer.json
+// now has an autoload classmap for system/lib/, but vendor/ may not be
+// installed yet on a fresh checkout — include the class file explicitly
+// so the bridge works with OR without composer.
+if (!class_exists('AzureOIDC') && file_exists(IAM_ROOT . '/system/lib/AzureOIDC.php')) {
+  include_once IAM_ROOT . '/system/lib/AzureOIDC.php';
+}
+$azure_enabled_bridge = false;
+if (
+  file_exists(IAM_ROOT . '/_iamConfig/azure.json') &&
+  class_exists('AzureOIDC')
+) {
+  try {
+    // Use IAM_ROOT (defined in system/lib/IAM.php, included just before
+    // this file) so the path resolves correctly whether this boilerplate
+    // runs from its source location (system/boilerplate/systemsetup/) OR
+    // from the install copy (_iamConfig/iamConfig.php). A __DIR__-relative
+    // path breaks once the file is copied because __DIR__ changes.
+    $__azure_oidc = AzureOIDC::load(IAM_ROOT . '/_iamConfig/azure.json');
+    if ($__azure_oidc->isEnabled()) {
+      $azure_enabled_bridge = true;
+      $IAM->enterprise->logout = $__azure_oidc->getLogoutUrl();
+    }
+  } catch (Throwable $__azure_bridge_err) {
+    // Fail closed: silently fall through to the legacy REMOTE_USER path.
+    $azure_enabled_bridge = false;
+  }
+}
+unset($__azure_oidc, $__azure_bridge_err);
+// --------------------------------------------------------------------------
 // CDN so all paths resolve on front end from 1 place
 if ($HAXCMS) {
   $HAXCMS->cdn = IAM_PROTOCOL . IAM_BASE_DOMAIN . '/cdn/1.x.x/';
@@ -32,12 +71,29 @@ if ($HAXCMS) {
   #$HAXCMS->cdn = "https://media.aanda.psu.edu/sites/all/libraries/webcomponents/";  
 }
 
-// don't set an enterprise user if we don't have one but check our two logical locations
+// don't set an enterprise user if we don't have one but check our two logical locations.
+// Invariant #6 from _contracts/azure_json_schema.md: when Azure is enabled,
+// $_SESSION['HAXIAM_USER'] is set by oauth-callback.php after ID-token validation,
+// and we deliberately DO NOT overwrite it from REMOTE_USER. Otherwise the legacy
+// REMOTE_USER / PHP_AUTH_USER fallback applies (Shibboleth / Apache module).
 if (!isset($_SESSION['HAXIAM_USER']) || $_SESSION['HAXIAM_USER'] == '') {
-  if (isset($_SERVER['REMOTE_USER'])) {
+  // When Azure OIDC is enabled, fail closed instead of importing REMOTE_USER
+  // / PHP_AUTH_USER — the contract (invariant #6) promises that an enabled
+  // Azure provider is the sole auth source. A stale REMOTE_USER from a
+  // Shibboleth/Apache module must NOT authenticate a different identity.
+  if ($azure_enabled_bridge) {
+    // Azure is enabled but no OIDC session — don't fall back; the downstream
+    // routing will redirect to login.php which kicks the Azure authorize flow.
+  }
+  else if (isset($_SERVER['REMOTE_USER'])) {
+    // Security (M3): rotate the session ID on the unauthenticated->authenticated
+    // transition so a session ID fixed before login can't persist into the
+    // authenticated session (mirrors oauth-callback.php's session_regenerate_id).
+    session_regenerate_id(true);
     $_SESSION['HAXIAM_USER'] = $_SERVER['REMOTE_USER'];
   }
   else if (isset($_SERVER['PHP_AUTH_USER'])) {
+    session_regenerate_id(true);
     $_SESSION['HAXIAM_USER'] = $_SERVER['PHP_AUTH_USER'];
   }
 }
@@ -106,7 +162,11 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
       $HAXCMS->setRefreshTokenCookie($HAXCMS->getRefreshToken($IAM->enterprise->userVar));
     }
     else if (method_exists($HAXCMS, 'getRefreshToken')) {
-      setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = false, $_httponly = true);
+      // Security (H3): set Secure when on TLS so the bearer token isn't sent
+      // over plain HTTP (matches oauth-callback.php).
+      $_isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+      setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = $_isSecure, $_httponly = true);
     }
   }
   // we don't have a siteownername via URL, we need to redirect to the user's site space
@@ -153,7 +213,11 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
       $HAXCMS->setRefreshTokenCookie($HAXCMS->getRefreshToken($IAM->enterprise->userVar));
     }
     else if (method_exists($HAXCMS, 'getRefreshToken')) {
-      setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = false, $_httponly = true);
+      // Security (H3): set Secure when on TLS so the bearer token isn't sent
+      // over plain HTTP (matches oauth-callback.php).
+      $_isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+      setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = $_isSecure, $_httponly = true);
     }
   }
   // we do have a user and if we end up getting here it means the other tests all passed

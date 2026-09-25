@@ -1,91 +1,78 @@
 APIVersion: v1.5.2
 name: iam
 type: php
+# Install path matches what scripts/install/haxiam-install.sh deploys at:
+# /var/www/iam (the installer's --ha default). Empty docroot (->webroot) so
+# HAXiam's per-user /{user}/sites/{site}/ pretty-URL rewrite works.
 docroot: ""
-php_version: "7.3"
-webserver_type: nginx-fpm
+# Match the Ubuntu-24.04 branch of haxiam-install.sh (PHP 8.3-fpm +
+# extensions + Apache 2.4 + mpm_event + http2). Bumps the previously frozen
+# 7.3 line so a fresh `ddev start` exercises the same PHP the installer
+# ships today.
+php_version: "8.3"
+# Switch from the historic nginx-fpm to apache-fpm: haxiam-install.sh
+# explicitly enables apache2 + mpm_event + a2enmod proxy_fcgi, so the
+# install-test sidecar in this .ddev mirrors what an operator would see
+# on a real install.
+webserver_type: apache-fpm
 router_http_port: "80"
 router_https_port: "443"
 xdebug_enabled: false
 additional_hostnames: []
 additional_fqdns: []
-mariadb_version: "10.2"
+# HAXiam + HAXcms-php is PHP-only, no external DB. Drop MariaDB from the
+# dev sandbox so it doesn't masquerade as a runtime DB on a real install
+# (the installer never installs MariaDB and HAXcms-php writes JSON files
+# to _config/SALT.txt).
+mariadb_version: ""
+# HAXstatic caching is intentionally off — every request should hit
+# Apache/PHP so installation-failing routes surface immediately.
 webcache_enabled: false
 provider: default
-# This config.yaml was created with ddev version v1.5.2 
-# webimage: drud/ddev-webserver:v1.5.2
-# dbimage: drud/ddev-dbserver:v1.5.2-10.2
-# dbaimage: drud/phpmyadmin:v1.5.2
-# bgsyncimage: drud/ddev-bgsync:v1.5.2
-# However we do not recommend explicitly wiring these images into the
-# config.yaml as they may break future versions of ddev.
-# You can update this config.yaml using 'ddev config'.
-
-# Key features of ddev's config.yaml:
-
-# name: <projectname> # Name of the project, automatically provides
-#   http://projectname.ddev.local and https://projectname.ddev.local
-
-# type: <projecttype>  # drupal6/7/8, backdrop, typo3, wordpress, php
-
-# docroot: <relative_path> # Relative path to the directory containing index.php.
-
-# php_version: "7.1"  # PHP version to use, "5.6", "7.0", "7.1", "7.2", "7.3"
-
-# You can explicitly specify the webimage, dbimage, dbaimage lines but this
-# is not recommended, as the images are often closely tied to ddev's' behavior,
-# so this can break upgrades.
-
-# webimage: <docker_image>  # nginx/php docker image.
-# dbimage: <docker_image>  # mariadb docker image.
-# dbaimage: <docker_image>
-# bgsyncimage: <docker_image>
-
-# router_http_port: <port>  # Port to be used for http (defaults to port 80)
-# router_https_port: <port> # Port for https (defaults to 443)
-
-# xdebug_enabled: false  # Set to true to enable xdebug and "ddev start" or "ddev restart"
-
-# webserver_type: nginx-fpm  # Can be set to apache-fpm or apache-cgi as well
-
-# additional_hostnames:
-#  - somename
-#  - someothername
-# would provide http and https URLs for "somename.ddev.local"
-# and "someothername.ddev.local".
-
-# additional_fqdns:
-#  - example.com
-#  - sub1.example.com
-# would provide http and https URLs for "example.com" and "sub1.example.com"
-# Please take care with this because it can cause great confusion.
-
-# upload_dir: custom/upload/dir
-# would set the destination path for ddev import-files to custom/upload/dir.
-
-# working_dir:
-#   web: /var/www/html
-#   db: /home
-# would set the default working directory for the web and db services. 
-# These values specify the destination directory for ddev ssh and the 
-# directory in which commands passed into ddev exec are run. 
-
-# omit_containers: ["dba", "ddev-ssh-agent"]
-# would omit the dba (phpMyAdmin) and ddev-ssh-agent containers. Currently
-# only those two containers can be omitted here.
-# Note that these containers can also be omitted globally in the 
-# ~/.ddev/global_config.yaml or with the "ddev config global" command.
-
-
-# provider: default # Currently either "default" or "pantheon"
+# We do not list webimage / dbimage / dbaimage here on purpose: ddev
+# recommends deriving them from its current release (matching
+# `ddev --version`), and pinning defeats future upgrades.
 #
-# Many ddev commands can be extended to run tasks after the ddev command is
-# executed.
-# See https://ddev.readthedocs.io/en/stable/users/extending-commands/ for more
-# information on the commands that can be extended and the tasks you can define
-# for them. Example:
-#hooks:
+# HOW TO USE THIS .ddev
+#
+#   1. Once per host:    ddev config --project-type=php --php-version=8.3
+#                        --webserver-type=apache-fpm  (already encoded above)
+#   2. ddev start
+#                        — first start runs the post-start hook which is
+#                          the install path. This builds a fully working
+#                          HAXiam inside the .ddev sandbox and reaches it
+#                          on http://haxiam.ddev.local after a couple of
+#                          minutes (mostly apt + git clone + composer).
+#   3. ddev restart       — idempotent re-run; installer detects the
+#                          existing /var/www/iam/_iamConfig/config.cfg and
+#                          does NOT clobber anything (installer invariant
+#                          #2 from _contracts/installer_flag_surface.md).
+#
+# This file replaces the previous .ddev/config.yaml which targeted PHP 7.3
+# + nginx-fpm + an obsolete whateveryousayiam.sh post-start. That setup had
+# not been run on the host in the project's history and was drift from the
+# current installer. See issue #3070.
+
 hooks:
+  # The installer's "fresh install" check is: there is NO line beginning
+  # with `haxiam=` in _iamConfig/config.cfg. The hook below creates a
+  # fully working install on first ddev start, and silently skips on
+  # subsequent runs.
   post-start:
-  - exec: bash scripts/whateveryousayiam.sh
-  - exec: echo 'go to http://haxiam.ddev.local'
+  - exec: |
+      # DDEV's web container may be Debian-based, which the installer
+      # doesn't support. Gate on whether the container is Ubuntu before
+      # running the installer; skip gracefully if not (review fix #15).
+      # DDEV mounts the project at /var/www/html, not /var/www/iam.
+      if ! grep -Eq '^[[:space:]]*haxiam[[:space:]]*=' /var/www/html/_iamConfig/config.cfg 2>/dev/null; then
+        if grep -q '^ID=ubuntu' /etc/os-release 2>/dev/null; then
+          echo "[.ddev] First start — running scripts/install/haxiam-install.sh"
+          sudo bash /var/www/html/scripts/install/haxiam-install.sh --distro ubuntu-24.04 --skip-le --non-interactive --ha /var/www/html || echo "[.ddev] Installer failed — check logs."
+        else
+          echo "[.ddev] Web container is not Ubuntu — skipping installer. Run manually if needed."
+        fi
+      else
+        echo "[.ddev] Existing install detected at /var/www/html — skipping installer."
+      fi
+  # Convenience message telling the operator where to go next.
+  - exec: echo 'go to http://haxiam.ddev.local — the install is idempotent, run `ddev restart` after pulling a new installer.'
