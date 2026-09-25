@@ -97,6 +97,21 @@ class AzureOIDC
     protected static $providerFactory = null;
 
     /**
+     * In-memory JWKS cache keyed by tenantId so we don't hit Microsoft's
+     * discovery endpoint on every callback (L3: latency + DoS hardening).
+     * Only consulted on the production path; the test seam bypasses it so
+     * tests stay deterministic.
+     * @var array
+     */
+    protected static $jwksCache = array();
+
+    /**
+     * JWKS cache TTL in seconds. Microsoft rotates signing keys rarely;
+     * 1h is a safe upper bound.
+     */
+    protected static $jwksCacheTtl = 3600;
+
+    /**
      * Default constructor — callers should use load() to populate config.
      */
     public function __construct()
@@ -281,6 +296,33 @@ class AzureOIDC
     }
 
     /**
+     * Compute an opaque OIDC `nonce` for replay protection (M4). The caller
+     * stores this in $_SESSION['oauth_nonce'] before redirecting to the
+     * Azure authorize endpoint; handleCallback() asserts the ID-token
+     * `nonce` claim round-trips so a captured code/token can't be replayed
+     * in a different session.
+     *
+     * @return string
+     */
+    public function generateNonce()
+    {
+        return bin2hex(random_bytes(16));
+    }
+
+    /**
+     * Compute a PKCE `code_verifier` (M5). 43 chars of URL-safe entropy.
+     * The caller stores this in $_SESSION['oauth_code_verifier'] and
+     * buildAuthorizationUrl() derives the S256 code_challenge from it so a
+     * leaked authorization code can't be redeemed without the verifier.
+     *
+     * @return string
+     */
+    public function generateCodeVerifier()
+    {
+        return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    }
+
+    /**
      * Invariant #3 / publisher-side: build the Microsoft v2.0 authorize URL.
      *
      * Uses GenericProvider against the v2.0 endpoints so the PKCE/redirect_uri
@@ -295,7 +337,7 @@ class AzureOIDC
      * @throws RuntimeException when the provider is not enabled or the
      *         composer dependencies are unavailable
      */
-    public function buildAuthorizationUrl($state)
+    public function buildAuthorizationUrl($state, $nonce = null, $codeVerifier = null)
     {
         if (!$this->isEnabled()) {
             throw new RuntimeException('AzureOIDC is not enabled');
@@ -337,12 +379,24 @@ class AzureOIDC
             // passing an array produces scope[0]=openid... instead of the
             // space-delimited scope=openid%20profile%20email Microsoft
             // requires. Pass a space-delimited string (review fix #10).
-            $url = $provider->getAuthorizationUrl(array(
+            $authParams = array(
                 'scope' => implode(' ', $scopesArray),
                 'state' => $state,
                 'response_type' => 'code',
                 'prompt' => 'select_account',
-            ));
+            );
+            // OIDC nonce (M4): binds the returned ID token to this
+            // authorization request for replay protection.
+            if (is_string($nonce) && trim($nonce) !== '') {
+                $authParams['nonce'] = $nonce;
+            }
+            // PKCE (M5): S256 code_challenge so a leaked authorization code
+            // can't be redeemed without the verifier held in our session.
+            if (is_string($codeVerifier) && trim($codeVerifier) !== '') {
+                $authParams['code_challenge'] = rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
+                $authParams['code_challenge_method'] = 'S256';
+            }
+            $url = $provider->getAuthorizationUrl($authParams);
         } catch (Throwable $e) {
             throw new RuntimeException('Unable to build Azure authorization URL');
         }
@@ -380,6 +434,14 @@ class AzureOIDC
         // One-shot: clear so a re-POST can't replay the same code.
         unset($_SESSION['oauth_state']);
 
+        // Pull the OIDC nonce + PKCE verifier stashed by login.php before
+        // clearing them, so we can bind the ID token to this request (M4)
+        // and redeem the code with the verifier (M5). Both are optional:
+        // legacy/test sessions that didn't set them simply skip the checks.
+        $nonceStored = isset($_SESSION['oauth_nonce']) ? (string)$_SESSION['oauth_nonce'] : '';
+        $codeVerifierStored = isset($_SESSION['oauth_code_verifier']) ? (string)$_SESSION['oauth_code_verifier'] : '';
+        unset($_SESSION['oauth_nonce'], $_SESSION['oauth_code_verifier']);
+
         $tenantId = $this->config->tenantId;
         $clientId = $this->config->clientId;
         $clientSecret = $this->config->clientSecret;
@@ -407,7 +469,12 @@ class AzureOIDC
                     'urlResourceOwnerDetails' => 'https://graph.microsoft.com/v1.0/me',
                     'accessTokenMethod' => 'POST',
                 ));
-                $tokenResult = $provider->getAccessToken('authorization_code', array('code' => $code));
+                $tokenParams = array('code' => $code);
+                // PKCE (M5): include the verifier when we sent a challenge.
+                if ($codeVerifierStored !== '') {
+                    $tokenParams['code_verifier'] = $codeVerifierStored;
+                }
+                $tokenResult = $provider->getAccessToken('authorization_code', $tokenParams);
             } catch (Throwable $e) {
                 $tokenResult = null;
             }
@@ -490,6 +557,15 @@ class AzureOIDC
             return null;
         }
 
+        // OIDC nonce (M4): when login.php sent a nonce, the ID token MUST
+        // echo it back. A mismatch means the token wasn't minted for this
+        // authorization request (replay / token substitution).
+        if ($nonceStored !== '') {
+            if (!isset($claims['nonce']) || !is_string($claims['nonce']) || !hash_equals($nonceStored, (string)$claims['nonce'])) {
+                return null;
+            }
+        }
+
         // Step 5: derive a machine-name-safe username.
         $candidate = '';
         if (isset($claims['preferred_username']) && is_string($claims['preferred_username'])) {
@@ -501,6 +577,10 @@ class AzureOIDC
         } else if (isset($claims['oid']) && is_string($claims['oid']) && trim($claims['oid']) !== '') {
             $candidate = 'oid:' . $claims['oid'];
         }
+        // Capture the raw identity (full UPN/email) before sanitization so
+        // oauth-callback.php can bind users/<name> to a specific identity and
+        // block cross-identity collisions (H2).
+        $this->lastRawIdentity = (is_string($candidate) && $candidate !== '') ? $candidate : null;
         $safe = $this->sanitizeUserName($candidate);
         if ($safe === '') {
             return null;
@@ -573,6 +653,11 @@ class AzureOIDC
             }
             return $result;
         }
+        // Production cache (L3): avoid hitting the discovery endpoint on every
+        // callback. The test seam above bypasses this so tests stay deterministic.
+        if (isset(self::$jwksCache[$tenantId]['expires']) && time() < self::$jwksCache[$tenantId]['expires']) {
+            return self::$jwksCache[$tenantId]['data'];
+        }
         if (!function_exists('curl_init')) {
             throw new RuntimeException('cURL extension is required for JWKS fetch');
         }
@@ -580,6 +665,17 @@ class AzureOIDC
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json'));
+        // Explicit TLS peer verification (L3): the JWKS is the root of trust
+        // for ID-token signatures, so be explicit rather than rely on cURL
+        // defaults. Use the system CA bundle when one is configured.
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        if (defined('CURLOPT_SSL_VERIFYHOST')) {
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+        }
+        $caFile = ini_get('openssl.cafile');
+        if (is_string($caFile) && $caFile !== '' && is_file($caFile)) {
+            curl_setopt($ch, CURLOPT_CAINFO, $caFile);
+        }
         $body = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err = curl_error($ch);
@@ -591,6 +687,7 @@ class AzureOIDC
         if (!is_array($decoded)) {
             throw new RuntimeException('Microsoft JWKS did not parse as JSON');
         }
+        self::$jwksCache[$tenantId] = array('data' => $decoded, 'expires' => time() + self::$jwksCacheTtl);
         return $decoded;
     }
 
@@ -612,6 +709,22 @@ class AzureOIDC
         }
         if (!is_array($jwks) || empty($jwks['keys'])) {
             throw new RuntimeException('JWKS keys list is empty');
+        }
+        // Defense-in-depth (L1): reject any token whose JOSE header isn't
+        // RS256 before signature verification. firebase/php-jwt v7 binds the
+        // algorithm to the parsed Key, but an explicit allowlist guards
+        // against alg-confusion / alg=none regressions in future versions.
+        $headerJson = false;
+        $headerParts = explode('.', $idToken);
+        if (isset($headerParts[0])) {
+            $headerJson = base64_decode(strtr($headerParts[0], '-_', '+/'), true);
+        }
+        if ($headerJson === false || $headerJson === '') {
+            throw new RuntimeException('ID token header is not valid base64url');
+        }
+        $header = json_decode($headerJson, true);
+        if (!is_array($header) || !isset($header['alg']) || $header['alg'] !== 'RS256') {
+            throw new RuntimeException('ID token alg must be RS256');
         }
         // Allow a 30-second clock leeway for production-distributed deployments
         // before issuer-side nbf/exp asserts fail.
@@ -696,5 +809,109 @@ class AzureOIDC
     public static function resetProviderFactory()
     {
         self::$providerFactory = null;
+    }
+
+    /**
+     * Clear the in-memory JWKS cache (L3). Tests call this between cases so
+     * a cached keyset from one scenario can't leak into another.
+     */
+    public static function resetJwksCache()
+    {
+        self::$jwksCache = array();
+    }
+
+    // ------------------------------------------------------------------
+    //  Identity binding / collision guard (H2).
+    //  Each users/<name> directory is bound to the full UPN/email that first
+    //  claimed it via a marker in _iamConfig/identities/<name>.json (that dir
+    //  is vhost-denied + git-ignored, so the marker is not web-accessible).
+    //  On a subsequent login, a DIFFERENT identity that sanitizes to the
+    //  same name is blocked instead of being silently dropped into the
+    //  existing user's space.
+    // ------------------------------------------------------------------
+
+    /**
+     * Decide whether a sanitized username can safely be bound to the given
+     * raw identity. Returns one of:
+     *   'new'      - the user directory does not exist yet (caller liberates,
+     *                then calls bindNewUserIdentity()).
+     *   'ok'       - the directory is bound to this identity (or a legacy
+     *                un-bound directory was just back-filled).
+     *   'conflict' - the directory is bound to a DIFFERENT identity; the
+     *                caller MUST block (redirect to login.php?sso_error=
+     *                identity_conflict) and issue no refresh token.
+     *
+     * @param string $userDir     absolute path to users/<name>
+     * @param string $markerPath  absolute path to _iamConfig/identities/<name>.json
+     * @param string $rawIdentity full UPN/email from the ID token
+     * @return string
+     */
+    public static function resolveIdentityConflict($userDir, $markerPath, $rawIdentity)
+    {
+        if (!is_string($markerPath) || trim($markerPath) === '') {
+            return 'conflict';
+        }
+        $userExists = is_string($userDir) && is_dir($userDir);
+        if (!$userExists) {
+            return 'new';
+        }
+        if (!is_file($markerPath)) {
+            // Legacy directory pre-dating this guard. Back-fill so a future
+            // cross-identity collision is caught rather than silently allowed.
+            self::writeIdentityMarker($markerPath, $rawIdentity);
+            return 'ok';
+        }
+        $raw = @file_get_contents($markerPath);
+        if ($raw === false) {
+            // Unreadable marker — don't lock the user out; treat as bound.
+            return 'ok';
+        }
+        $data = json_decode($raw, true);
+        $bound = (is_array($data) && isset($data['upn']) && is_string($data['upn'])) ? $data['upn'] : '';
+        if ($bound === '') {
+            // Corrupt/empty marker — back-fill with the current identity.
+            self::writeIdentityMarker($markerPath, $rawIdentity);
+            return 'ok';
+        }
+        if ($bound === $rawIdentity) {
+            return 'ok';
+        }
+        return 'conflict';
+    }
+
+    /**
+     * Bind a freshly-liberated user directory to its identity. No-op if the
+     * marker already exists (e.g. resolveIdentityConflict already wrote it).
+     *
+     * @param string $userDir     absolute path to users/<name>
+     * @param string $markerPath  absolute path to _iamConfig/identities/<name>.json
+     * @param string $rawIdentity full UPN/email from the ID token
+     */
+    public static function bindNewUserIdentity($userDir, $markerPath, $rawIdentity)
+    {
+        if (!is_string($userDir) || !is_dir($userDir)) {
+            return;
+        }
+        if (!is_file($markerPath)) {
+            self::writeIdentityMarker($markerPath, $rawIdentity);
+        }
+    }
+
+    /**
+     * Write the identity marker (0640, locked write). The parent dir is
+     * created 0750 if missing.
+     *
+     * @param string $markerPath
+     * @param string $rawIdentity
+     */
+    protected static function writeIdentityMarker($markerPath, $rawIdentity)
+    {
+        $dir = dirname($markerPath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0750, true);
+        }
+        $payload = array('upn' => is_string($rawIdentity) ? $rawIdentity : '', 'createdAt' => time());
+        @file_put_contents($markerPath, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
+        @chmod($markerPath, 0640);
     }
 }

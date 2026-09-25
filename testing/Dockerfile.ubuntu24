@@ -81,7 +81,7 @@ RUN set -eux; \
         '    ServerAdmin webmaster@localhost' \
         '    DocumentRoot /var/www/iam' \
         '    <Directory /var/www/iam/>' \
-        '        Options Indexes FollowSymLinks' \
+        '        Options -Indexes +FollowSymLinks' \
         '        AllowOverride All' \
         '        Require all granted' \
         '    </Directory>' \

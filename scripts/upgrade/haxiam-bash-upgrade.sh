@@ -26,6 +26,9 @@
 # ----------------------------------------------------------------------
 # 0. Locate ourselves, source config, set up colour helpers.
 # ----------------------------------------------------------------------
+# Fail a pipeline if any stage fails (L5); the script keeps its manual
+# per-step exit-code checks, but this surfaces e.g. find|sed|awk breakage.
+set -o pipefail
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "${DIR}"
 cd ../../
@@ -242,6 +245,9 @@ for proto in https http; do
   # another 000, producing 000000 which doesn't match the failure check
   # (review previously-missed #2). Use a temp var and only assign 000
   # when curl actually fails.
+  # Note (L7): -k disables TLS peer verification deliberately — the installer
+  # defaults to --skip-le so the dashboard may be on a self-signed cert or
+  # plain HTTP. This probe carries no secrets; it only checks for a non-5xx.
   HEALTH_CODE="$(curl --silent --output /dev/null --max-time 8 -L \
     -k "${HEALTH_URL}" -w '%{http_code}' 2>/dev/null)" || HEALTH_CODE="000"
   if [[ "${HEALTH_CODE}" != "000" && ! "${HEALTH_CODE}" =~ ^5 ]]; then

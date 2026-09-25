@@ -6,5 +6,6 @@
     "redirectUri": "",
     "issuer": "",
     "scopes": "openid profile email",
-    "providerClass": "AzureOIDC"
+    "providerClass": "AzureOIDC",
+    "adminContactEmail": ""
 }

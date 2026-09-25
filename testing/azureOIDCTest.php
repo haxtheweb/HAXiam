@@ -256,6 +256,8 @@ try {
     ));
     check($userVar === 'jane.doe', 'handleCallback happy path returns sanitized preferred_username', $passes, $failures);
     check(!isset($_SESSION['oauth_state']), 'handleCallback one-shots oauth_state in session', $passes, $failures);
+    // H2: the raw UPN (pre-sanitization) is exposed for identity binding.
+    check($provider->lastRawIdentity === 'Jane.Doe@Example.edu', 'handleCallback exposes raw UPN via lastRawIdentity for binding (H2)', $passes, $failures);
 
     // Invariant #8 #2: state mismatch returns null.
     makeAzureJson($sandbox, true);
@@ -319,6 +321,39 @@ try {
     ));
     check($fail === null, 'handleCallback rejects expired ID token', $passes, $failures);
 
+    // M4: OIDC nonce replay protection. When login.php stashes a nonce in
+    // $_SESSION['oauth_nonce'], handleCallback MUST accept an ID token whose
+    // nonce claim matches and reject one that doesn't.
+    makeAzureJson($sandbox, true);
+    $provider = AzureOIDC::load($sandbox . '/_iamConfig/azure.json');
+    $nonceVal = $provider->generateNonce();
+    $_SESSION = array();
+    $_SESSION['oauth_state'] = $state;
+    $_SESSION['oauth_nonce'] = $nonceVal;
+    AzureOIDC::setIdTokenVerifier(function ($idToken, $jwks, $expectedIssuer, $expectedAudience) use ($fakeClaims, $nonceVal) {
+        $good = clone $fakeClaims;
+        $good->nonce = $nonceVal;
+        return $good;
+    });
+    AzureOIDC::setTokenExchanger(function ($code, $self) use ($fakeAccessToken) {
+        return $fakeAccessToken;
+    });
+    $okNonce = $provider->handleCallback(array('code' => 'auth-code-abc', 'state' => $state));
+    check($okNonce === 'jane.doe', 'handleCallback accepts ID token with matching nonce', $passes, $failures);
+    check(!isset($_SESSION['oauth_nonce']), 'handleCallback one-shots oauth_nonce in session', $passes, $failures);
+
+    // Nonce mismatch -> null (replay / token substitution rejected).
+    $_SESSION = array();
+    $_SESSION['oauth_state'] = $state;
+    $_SESSION['oauth_nonce'] = $nonceVal;
+    AzureOIDC::setIdTokenVerifier(function ($idToken, $jwks, $expectedIssuer, $expectedAudience) use ($fakeClaims) {
+        $bad = clone $fakeClaims;
+        $bad->nonce = 'not-the-nonce';
+        return $bad;
+    });
+    $failNonce = $provider->handleCallback(array('code' => 'auth-code-abc', 'state' => $state));
+    check($failNonce === null, 'handleCallback rejects ID token with mismatched nonce', $passes, $failures);
+
     // Invariant #8 #7: not-enabled provider short-circuits to null.
     makeAzureJson($sandbox, false);
     $disabled = AzureOIDC::load($sandbox . '/_iamConfig/azure.json');
@@ -373,10 +408,31 @@ try {
         $failures
     );
 
+    // H2: identity collision guard (resolveIdentityConflict / bindNewUserIdentity).
+    // Marker lives in _iamConfig/identities/<name>.json; a different identity
+    // mapping to an existing bound name MUST be blocked, while a legacy
+    // un-bound directory is back-filled instead of locking the user out.
+    $identDir = $sandbox . '/_iamConfig/identities';
+    $h2UserDir = $sandbox . '/users/jane.doe';
+    $h2Marker = $identDir . '/jane.doe.json';
+    check(AzureOIDC::resolveIdentityConflict($h2UserDir, $h2Marker, 'Jane.Doe@Example.edu') === 'new', 'resolveIdentityConflict returns new when user dir absent', $passes, $failures);
+    @mkdir($h2UserDir, 0755, true);
+    AzureOIDC::bindNewUserIdentity($h2UserDir, $h2Marker, 'Jane.Doe@Example.edu');
+    check(is_file($h2Marker), 'bindNewUserIdentity writes identity marker', $passes, $failures);
+    check(AzureOIDC::resolveIdentityConflict($h2UserDir, $h2Marker, 'Jane.Doe@Example.edu') === 'ok', 'resolveIdentityConflict ok for same identity returning', $passes, $failures);
+    check(AzureOIDC::resolveIdentityConflict($h2UserDir, $h2Marker, 'Jane.Doe@Other.edu') === 'conflict', 'resolveIdentityConflict conflict for a different identity on the same name', $passes, $failures);
+    $h2LegacyDir = $sandbox . '/users/legacy';
+    $h2LegacyMarker = $identDir . '/legacy.json';
+    @mkdir($h2LegacyDir, 0755, true);
+    check(AzureOIDC::resolveIdentityConflict($h2LegacyDir, $h2LegacyMarker, 'legacy@Example.edu') === 'ok', 'resolveIdentityConflict backfills legacy dir without locking user out', $passes, $failures);
+    check(is_file($h2LegacyMarker), 'legacy back-fill wrote marker', $passes, $failures);
+    check(AzureOIDC::resolveIdentityConflict($h2LegacyDir, $h2LegacyMarker, 'legacy@Other.edu') === 'conflict', 'resolveIdentityConflict conflict on back-filled legacy name', $passes, $failures);
+
     // Reset test seams between runs.
     AzureOIDC::resetJwksHttpFetcher();
     AzureOIDC::resetIdTokenVerifier();
     AzureOIDC::resetTokenExchanger();
+    AzureOIDC::resetJwksCache();
 } catch (Throwable $e) {
     $failures[] = 'unhandled exception: ' . $e->getMessage();
     fwrite(STDERR, "EXCEPTION: " . $e->getMessage() . "\n");

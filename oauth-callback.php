@@ -86,6 +86,23 @@ if (!is_string($user) || trim($user) === '') {
     exit;
 }
 
+// --- Phase 1b: identity collision guard (H2) ---
+// Bind users/<name> to the full UPN/email from the ID token so a DIFFERENT
+// identity that sanitizes to the same machine name (e.g. two orgs sharing a
+// local-part in one tenant) can't be silently dropped into the existing
+// user's space. The marker lives in _iamConfig/identities/ (vhost-denied +
+// git-ignored). A conflict redirects to an error page with NO refresh token.
+$rawIdentity = (is_string($oauth_provider->lastRawIdentity) && trim($oauth_provider->lastRawIdentity) !== '')
+    ? $oauth_provider->lastRawIdentity : $user;
+$_userDir = IAM_ROOT . '/users/' . $user;
+$_markerPath = IAM_ROOT . '/_iamConfig/identities/' . $user . '.json';
+$_identityStatus = AzureOIDC::resolveIdentityConflict($_userDir, $_markerPath, $rawIdentity);
+if ($_identityStatus === 'conflict') {
+    // Directory already bound to a different identity — block, no token.
+    header('Location: login.php?sso_error=identity_conflict');
+    exit;
+}
+
 // --- Phase 2: Success path — set session, bootstrap HAXcms, issue token ---
 // Now that the callback is validated, set the session user and bootstrap
 // the HAXcms config for refresh-token issuance + enterprise URL.
@@ -120,6 +137,10 @@ if (method_exists($HAXCMS, 'getRefreshToken') && method_exists($HAXCMS, 'setRefr
 if (!is_dir(IAM_ROOT . '/users/' . $user)) {
     $IAM->liberate($user);
 }
+// Bind the freshly-liberated (or legacy un-bound) directory to this identity
+// so a future login by a different identity that sanitizes to the same name
+// is blocked instead of mapping into this space (H2).
+AzureOIDC::bindNewUserIdentity(IAM_ROOT . '/users/' . $user, $_markerPath, $rawIdentity);
 
 header('Location: ' . $IAM->enterprise->iamUrl . $user);
 exit;

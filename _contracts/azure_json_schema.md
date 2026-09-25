@@ -19,7 +19,8 @@ This contract is committed FIRST so every child agent implements against the sam
   "redirectUri": "",
   "issuer": "",
   "scopes": "openid profile email",
-  "providerClass": "AzureOIDC"
+  "providerClass": "AzureOIDC",
+  "adminContactEmail": ""
 }
 ```
 
@@ -33,6 +34,7 @@ This contract is committed FIRST so every child agent implements against the sam
 | `issuer`         | string  | optional              | Defaults to `https://login.microsoftonline.com/{tenantId}/v2.0`. Allow override for sovereign-cloud or v1 endpoints.                                                            |
 | `scopes`         | string  | optional              | Space-separated. Default `openid profile email`. Installer / JPS MUST NOT modify unless the user passes `--azure-scopes`.                                                     |
 | `providerClass`  | string  | optional              | Defaults to `AzureOIDC`. Allows future providers (e.g. generic OIDC) without changing the schema. The PHP class named lives in `system/lib/`.                                  |
+| `adminContactEmail` | string | optional            | Administrator contact email shown on the SSO error page (e.g. identity_conflict). Empty string => a generic "contact your system administrator" message. Not secret.                          |
 
 ## Publisher-side invariants (azure-oidc + installer-upgrade + haxiam-jps all depend on these)
 1. `AzureOIDC::load(): self` MUST accept a string path (default `__DIR__ . '/../../_iamConfig/azure.json'`), read-and-decode it, and return an instance. Missing/unreadable file throws `\RuntimeException` with NO credentials in the message.
@@ -45,3 +47,4 @@ This contract is committed FIRST so every child agent implements against the sam
    - else: keep the existing `REMOTE_USER`/`PHP_AUTH_USER` fallback block unchanged.
 7. `login.php` (post-bridge) redirects to `AzureOIDC::buildAuthorizationUrl($_SESSION['oauth_state'])` when `isEnabled()` is true; otherwise the existing legacy redirect stays.
 8. `oauth-callback.php` validates the ID token (signature via JWKS + `iss`/`aud`/`exp` claims) before setting `$_SESSION['HAXIAM_USER']`. On any failure it redirects to `login.php?sso_error=<reason>` and does NOT issue a refresh token.
+9. `oauth-callback.php` binds each `users/<name>` directory to the full UPN/email from the ID token via a marker in `_iamConfig/identities/<name>.json` (vhost-denied + git-ignored). On a subsequent login, if a DIFFERENT identity sanitizes to an already-bound name it redirects to `login.php?sso_error=identity_conflict` (no refresh token, no liberate). `login.php` renders `sso_error` codes (including `identity_conflict`) with `adminContactEmail` when configured. Legacy directories without a marker are back-filled on first login rather than locking users out.

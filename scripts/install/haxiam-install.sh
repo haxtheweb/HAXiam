@@ -146,6 +146,17 @@ if [[ ${AZ_FLAGS_SET} -gt 0 ]] && [[ ${AZ_FLAGS_SET} -ne 3 ]]; then
   exit 1
 fi
 
+# Security (L2): validate --domain is a syntactically valid hostname before it
+# is interpolated into PHP defines, certbot -d, and Apache vhost directives.
+# A value containing a single quote / shell / PHP metacharacter could inject
+# into the generated /var/IAMCONFIG.php. RFC 1123 label + dot subset.
+if [[ -n "${DOMAIN}" ]]; then
+  if [[ ! "${DOMAIN}" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then
+    install_red "--domain '${DOMAIN}' is not a valid hostname (letters, digits, hyphens, dots only)."
+    exit 1
+  fi
+fi
+
 # If --domain was given but --skip-le is set, write the runtime IAM domain
 # config so iamConfig.php uses the real domain instead of the placeholder
 # (review fix #7).
@@ -319,7 +330,7 @@ cat > "${VHOST_CONF}" <<VHOST
     ServerAdmin webmaster@localhost
     DocumentRoot ${HA_DIR}
     <Directory ${HA_DIR}/>
-        Options Indexes FollowSymLinks
+        Options -Indexes +FollowSymLinks
         AllowOverride All
         Require all granted
     </Directory>
@@ -350,8 +361,8 @@ apache2ctl graceful 2>/dev/null || service apache2 reload 2>/dev/null || true
 # ---------------------------------------------------------------------------
 install_bold "[3/8] HAXiam bootstrap"
 
-mkdir -p "${HA_DIR}/_iamConfig/tmp" "${HA_DIR}/_iamConfig/assets" "${HA_DIR}/_iamConfig/skeletons" "${HA_DIR}/_iamConfig/snapshots"
-for d in "${HA_DIR}/_iamConfig/tmp" "${HA_DIR}/_iamConfig/assets" "${HA_DIR}/_iamConfig/skeletons" "${HA_DIR}/_iamConfig/snapshots"; do
+mkdir -p "${HA_DIR}/_iamConfig/tmp" "${HA_DIR}/_iamConfig/assets" "${HA_DIR}/_iamConfig/skeletons" "${HA_DIR}/_iamConfig/snapshots" "${HA_DIR}/_iamConfig/identities"
+for d in "${HA_DIR}/_iamConfig/tmp" "${HA_DIR}/_iamConfig/assets" "${HA_DIR}/_iamConfig/skeletons" "${HA_DIR}/_iamConfig/snapshots" "${HA_DIR}/_iamConfig/identities"; do
   if [[ ! -f "${HA_DIR}/_iamConfig/install_manifest.txt" ]]; then
     bash "${LEDGER}" added "${d}/"
   fi
@@ -466,7 +477,8 @@ if [[ ! -f "_iamConfig/azure.json" ]]; then
     "redirectUri": "",
     "issuer": "",
     "scopes": "openid profile email",
-    "providerClass": "AzureOIDC"
+    "providerClass": "AzureOIDC",
+    "adminContactEmail": ""
 }
 AZJSON
   fi
@@ -539,7 +551,7 @@ elif [[ -n "${CERT_PATH}" && -n "${KEY_PATH}" ]]; then
   # actually uses them (review fix #8 — previously validated but never
   # wired in). The vhost uses the cert/key paths verbatim.
   VHOST_CONF="/etc/apache2/sites-available/haxiam-ssl.conf"
-  cat > "${VHOST_CONF}" <<SSLVHOST
+cat > "${VHOST_CONF}" <<SSLVHOST
 <VirtualHost *:443>
     ServerAdmin webmaster@localhost
     DocumentRoot ${HA_DIR}
@@ -547,9 +559,16 @@ elif [[ -n "${CERT_PATH}" && -n "${KEY_PATH}" ]]; then
     SSLCertificateFile ${CERT_PATH}
     SSLCertificateKeyFile ${KEY_PATH}
     <Directory ${HA_DIR}/>
-        Options Indexes FollowSymLinks
+        Options -Indexes +FollowSymLinks
         AllowOverride All
         Require all granted
+    </Directory>
+    # Deny access to _iamConfig over HTTPS too (H1): it holds azure.json
+    # (client secret), SALT.txt and config.cfg. The *:80 vhost already
+    # denies this; without it here the secret is reachable over the
+    # encrypted channel operators assume is safe.
+    <Directory ${HA_DIR}/_iamConfig>
+        Require all denied
     </Directory>
     <FilesMatch "\.php$">
         SetHandler "proxy:unix:/run/php/${PHP_FPM}.sock|fcgi://localhost"
@@ -601,7 +620,8 @@ if [[ ${AZ_FLAGS_SET} -eq 3 ]]; then
     "redirectUri": "",
     "issuer": "",
     "scopes": "openid profile email",
-    "providerClass": "AzureOIDC"
+    "providerClass": "AzureOIDC",
+    "adminContactEmail": ""
 }
 AZJSON
   fi
@@ -623,6 +643,7 @@ data = {
     "issuer": os.environ["ISSUER_VAL"],
     "scopes": os.environ["SCOPES_VAL"],
     "providerClass": "AzureOIDC",
+    "adminContactEmail": "",
 }
 with open(p, "w") as f:
     json.dump(data, f, indent=4, sort_keys=False)
@@ -698,7 +719,20 @@ if [[ -d "${HA_DIR}/_iamConfig/cache" ]]; then
   chown "${wwwuser}:${webgroup}" "${HA_DIR}/_iamConfig/cache"
   chmod 2755 "${HA_DIR}/_iamConfig/cache"
 fi
-install_green "Permissions applied (scoped to ${HA_DIR}/users|users_sites|_iamConfig/cache only)."
+# _iamConfig/identities holds the per-user identity markers written by
+# oauth-callback.php (H2 collision guard). www-data must be able to write it.
+if [[ -d "${HA_DIR}/_iamConfig/identities" ]]; then
+  chown "${wwwuser}:${webgroup}" "${HA_DIR}/_iamConfig/identities"
+  chmod 2750 "${HA_DIR}/_iamConfig/identities"
+fi
+# Security (L6): config.cfg is bash-sourced by the installer/upgrade/setup-user
+# scripts as root, so tighten it to root-owned 0640 to ensure no non-root user
+# can write it (which would yield root code execution on the next source).
+if [[ -f "${HA_DIR}/_iamConfig/config.cfg" ]]; then
+  chown root:"${webgroup}" "${HA_DIR}/_iamConfig/config.cfg" 2>/dev/null || chown root:root "${HA_DIR}/_iamConfig/config.cfg" 2>/dev/null || true
+  chmod 0640 "${HA_DIR}/_iamConfig/config.cfg" 2>/dev/null || true
+fi
+install_green "Permissions applied (scoped to ${HA_DIR}/users|users_sites|_iamConfig/cache + config.cfg)."
 
 # ---------------------------------------------------------------------------
 # Final summary (invariant #6).

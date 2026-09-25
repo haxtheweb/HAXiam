@@ -86,9 +86,14 @@ if (!isset($_SESSION['HAXIAM_USER']) || $_SESSION['HAXIAM_USER'] == '') {
     // routing will redirect to login.php which kicks the Azure authorize flow.
   }
   else if (isset($_SERVER['REMOTE_USER'])) {
+    // Security (M3): rotate the session ID on the unauthenticated->authenticated
+    // transition so a session ID fixed before login can't persist into the
+    // authenticated session (mirrors oauth-callback.php's session_regenerate_id).
+    session_regenerate_id(true);
     $_SESSION['HAXIAM_USER'] = $_SERVER['REMOTE_USER'];
   }
   else if (isset($_SERVER['PHP_AUTH_USER'])) {
+    session_regenerate_id(true);
     $_SESSION['HAXIAM_USER'] = $_SERVER['PHP_AUTH_USER'];
   }
 }
@@ -157,7 +162,11 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
       $HAXCMS->setRefreshTokenCookie($HAXCMS->getRefreshToken($IAM->enterprise->userVar));
     }
     else if (method_exists($HAXCMS, 'getRefreshToken')) {
-      setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = false, $_httponly = true);
+      // Security (H3): set Secure when on TLS so the bearer token isn't sent
+      // over plain HTTP (matches oauth-callback.php).
+      $_isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+      setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = $_isSecure, $_httponly = true);
     }
   }
   // we don't have a siteownername via URL, we need to redirect to the user's site space
@@ -204,7 +213,11 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
       $HAXCMS->setRefreshTokenCookie($HAXCMS->getRefreshToken($IAM->enterprise->userVar));
     }
     else if (method_exists($HAXCMS, 'getRefreshToken')) {
-      setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = false, $_httponly = true);
+      // Security (H3): set Secure when on TLS so the bearer token isn't sent
+      // over plain HTTP (matches oauth-callback.php).
+      $_isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+      setcookie('haxcms_refresh_token', $HAXCMS->getRefreshToken($IAM->enterprise->userVar), $_expires = 0, $_path = '/', $_domain = '', $_secure = $_isSecure, $_httponly = true);
     }
   }
   // we do have a user and if we end up getting here it means the other tests all passed
