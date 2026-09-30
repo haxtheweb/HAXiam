@@ -1,55 +1,6 @@
 #!/bin/bash
-# If I wasn't, then why would I say I am..
-
-# Color. The vibrant and dancing melody of the sighted.
-# provide messaging colors for output to console
-txtbld=$(tput bold)             # BELIEVE ME. Bold.
-bldgrn=$(tput setaf 2) #  WOOT. Green.
-bldred=${txtbld}$(tput setaf 1) # Booooo get off the stage. Red.
-txtreset=$(tput sgr0) # uhhh what?
-
-# cave....cave....c a ve... c      a     v         e  ....
-haxecho(){
-  echo "${bldgrn}$1${txtreset}"
-}
-# EVERYTHING IS ON FIRE
-haxwarn(){
-  echo "${bldred}$1${txtreset}"
-}
-# Create a unik, uneek, unqiue id.
-getuuid(){
-  echo $(cat /proc/sys/kernel/random/uuid)
-}
-echo "alias g='git'" >> $HOME/.bashrc
-echo "alias l='ls -laHF'" >> $HOME/.bashrc
-source ~/.bashrc
-
-# Install PHP 8.5 and other important packages for Ubuntu 26.04
-sudo apt-get update
-sudo apt-get install -y php8.5-fpm php8.5-zip php8.5-gd php8.5-dom php8.5-mbstring php8.5-yaml git apache2 brotli
-
-# Optional for development (composer, nodejs)
-# sudo apt-get install -y composer nodejs
-
-# Enable Apache modules
-sudo a2enmod proxy_fcgi
-sudo a2enconf php8.5-fpm
-sudo a2dismod mpm_prefork
-sudo a2enmod mpm_event
-sudo a2enmod http2
-sudo a2enmod ssl
-sudo a2enmod rewrite
-sudo a2enmod headers
-sudo a2enmod brotli
-sudo a2dismod status
-
-# Enable protocol support
-sudo -i
-sudo echo "Protocols h2 http/1.1" > /etc/apache2/conf-available/http2.conf
-sudo a2enconf http2
-
-# Restart Apache to apply all changes
-sudo service apache2 restart
-
-haxecho "Installation completed successfully on Ubuntu 26.04!"
-exit
+# Legacy curl one-liner entrypoint. Forwards every argv tail argument to the
+# unified installer with the distro pinned to ubuntu-26.04. See
+# scripts/install/haxiam-install.sh for the full flag surface.
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+exec "${DIR}/haxiam-install.sh" --distro ubuntu-26.04 "$@"

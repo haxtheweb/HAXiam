@@ -1,0 +1,140 @@
+# HAXiam install-test image: Ubuntu 24.04 + Apache 2.4 + PHP 8.3-fpm + composer.
+# Built once and reused by testing/docker-test.sh to exercise
+# scripts/install/haxiam-install.sh end-to-end in a clean, isolated
+# environment. Mirrors exactly what the installer's phase 2 would
+# apt-get, so a successful `docker run --rm haxiamspec-test:latest` with
+# the HAXiam repo bind-mounted to /var/www/iam stands up a fully working
+# HAXiam on http://localhost:8080.
+#
+# Usage (see testing/docker-test.sh):
+#   docker build -f testing/Dockerfile.ubuntu24 -t haxiamspec-test:latest .
+#   docker run --rm -p 8080:80 -v "$PWD":/var/www/iam \
+#       haxiamspec-test:latest --distro auto --skip-le --non-interactive
+
+FROM ubuntu:24.04
+
+# Container inside should be reproducible; UTC + noninteractive + no man-db
+# index updates cut the install time substantially.
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# Disable man-db/apt-list-based extras that bloat the image and slow apt-get.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        gnupg \
+        tzdata \
+        uuid-runtime \
+ && rm -rf /var/lib/apt/lists/*
+
+# Pre-install the runtime packages the installer would apt-get. The installer's
+# phase 2 calls `apt-get install` again, and its invariant #1 makes that a
+# NO-OP ("Already present — skipping apt-get."), which lets us test the
+# idempotency path on a second run without re-fetching.
+#
+# php8.3-* on Ubuntu 24.04 is in the universe pocket; enable after update.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        apache2 \
+        brotli \
+        certbot \
+        python3-certbot-apache \
+        git \
+        php8.3-cli \
+        php8.3-common \
+        php8.3-curl \
+        php8.3-fpm \
+        php8.3-gd \
+        php8.3-mbstring \
+        php8.3-xml \
+        php8.3-yaml \
+        php8.3-zip \
+        python3 \
+        uuid-runtime \
+ && rm -rf /var/lib/apt/lists/*
+
+# Composer (pinned to a stable release). The installer phase 4 will skip if
+# vendor/ is newer than composer.json, so baking composer in is safe.
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# Apache + PHP-FPM wiring — a2enmod proxy_fcgi + mpm_event + http2 + brotli +
+# ssl + rewrite + headers. uuid-runtime is needed by the installer's
+# scripts/haxtheweb.sh fallback when `uuidgen` isn't installed.
+RUN set -eux; \
+    a2dismod mpm_prefork || true; \
+    a2enmod mpm_event proxy_fcgi http2 ssl rewrite headers brotli; \
+    a2enconf php8.3-fpm || true; \
+    # http2 protocol hint, mirrored from scripts/install/ubuntu24.04.sh
+    if [ ! -e /etc/apache2/conf-available/http2.conf ]; then \
+        echo 'Protocols h2 http/1.1' > /etc/apache2/conf-available/http2.conf; \
+    fi; \
+    a2enconf http2 || true; \
+    # Apache listens on 80 inside the container; the test runner -p 8080:80 maps it.
+    rm -f /etc/apache2/sites-enabled/000-default.conf; \
+    # DocumentRoot at /var/www/iam so php-fpm forwards hits via mod_proxy_fcgi.
+    printf '%s\n' \
+        '<VirtualHost *:80>' \
+        '    ServerAdmin webmaster@localhost' \
+        '    DocumentRoot /var/www/iam' \
+        '    <Directory /var/www/iam/>' \
+        '        Options -Indexes +FollowSymLinks' \
+        '        AllowOverride All' \
+        '        Require all granted' \
+        '    </Directory>' \
+        '    <Directory /var/www/iam/_iamConfig>' \
+        '        Require all denied' \
+        '    </Directory>' \
+        '    <FilesMatch "\\.php$">' \
+        '        SetHandler "proxy:unix:/run/php/php8.3-fpm.sock|fcgi://localhost"' \
+        '    </FilesMatch>' \
+        '</VirtualHost>' \
+        > /etc/apache2/sites-available/haxiam.conf; \
+    a2ensite haxiam; \
+    # PHP-FPM listen on a unix socket so Apache can reach it without a TCP loopback.
+    sed -i 's|^listen = .*|listen = /run/php/php8.3-fpm.sock|' /etc/php/8.3/fpm/pool.d/www.conf; \
+    mkdir -p /run/php; \
+    # Don't chown by default; the installer phase 8 handles it.
+    rm -rf /tmp/*
+
+# Health check — we want to know as soon as Apache is up.
+HEALTHCHECK --interval=10s --timeout=5s --retries=6 --start-period=10s \
+  CMD curl --silent --fail --max-time 3 http://127.0.0.1/ >/dev/null || exit 1
+
+EXPOSE 80
+
+# Workdir inside the container that matches the installer's --ha default.
+WORKDIR /var/www/iam
+
+# Bake the entrypoint kernel into the image (see testing/docker-entrypoint.sh).
+# ENTRYPOINT + CMD split lets `docker run IMAGE [subcommand [args...]]` cleanly
+# drive the same script: default `serve` runs the installer once + foregrounds
+# apache (idempotent on restart); `one-shot --help` exits after one installer
+# invocation (used by testing/docker-test.sh's flag-surface unit tests).
+COPY testing/docker-entrypoint.sh /usr/local/bin/haxiam-docker-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/haxiam-docker-entrypoint.sh
+
+# Bake the HAXiam repo into /var/www/iam so `one-shot` flag tests can run
+# the installer without a host bind mount. The end-to-end test
+# (testing/docker-test.sh phase 3) builds a separate container with a
+# bind-mounted staging copy so it tests the installer against the operator's
+# actual working tree, not a baked image. We deliberately do NOT use git
+# here — `.git/`, `_iamConfig/`, `vendor/` are all .gitignored, and the
+# installer re-clones `cores/HAXcms-1.x.x` if missing.
+COPY . /var/www/iam
+RUN \
+    # Make sure the installer's php-side includes resolve (system/lib etc.).
+    ls -la /var/www/iam/scripts/install/haxiam-install.sh >/dev/null && \
+    # Drop anything in any cached '.' subtree that the installer would treat
+    # as "already installed" (specifically _iamConfig/config.cfg and the
+    # HAXcms checkout marker _config/IAM) so the first `serve` start will
+    # run a fresh install. .gitignored paths may exist on the host run.
+    rm -rf /var/www/iam/_iamConfig /var/www/iam/cores /var/www/iam/users \
+           /var/www/iam/users_sites /var/www/iam/vendor && \
+    echo '[haxiamspec-test] baked HAXiam repo into /var/www/iam.'
+
+ENTRYPOINT ["bash", "/usr/local/bin/haxiam-docker-entrypoint.sh"]
+CMD ["serve"]

@@ -1,0 +1,241 @@
+# Jelastic JPS manifest for HAXiam — see haxiam-jps/README.md for the
+# human-facing description and ../_contracts/ for the locked interfaces
+# this manifest implements against. Pure YAML: validated with
+# `python3 -c "import yaml; yaml.safe_load(open('manifest.jps'))"`.
+
+type: install
+id: haxiam
+version: 1.0.0
+
+# Where Jelastic pulls helper scripts from. The scripts/ folder in this
+# repo on this branch is mirrored under baseUrl/scripts/.
+baseUrl: https://raw.githubusercontent.com/haxtheweb/HAXiam/plan/3070-haxiam-jps/haxiam-jps/
+
+ssl: true
+skipNodeEmails: true
+
+displayName: HAXiam
+description: |
+  One-shot HAXiam install on Reclaim Cloud / Jelastic: Apache + PHP 8.3 + the
+  HAXiam app server, optionally terminated by the community Let's Encrypt
+  addon and authenticated via Azure AD SSO.
+
+# -----------------------------------------------------------------------------
+# Topology
+# -----------------------------------------------------------------------------
+
+nodes:
+  - nodeType: apache2
+    nodeGroup: cp
+    displayName: HAXiam
+    image: ubuntu:24.04
+    count: 1
+    fixed: true
+
+# External JPS addons this manifest may invoke. lets-encrypt is gated by
+# the `skipLE` settings checkbox at install time.
+addons:
+  - id: lets-encrypt
+    name: Let's Encrypt
+    type: jps
+    link: https://github.com/jelastic-public/lets-encrypt/blob/master/manifest.jps
+
+# -----------------------------------------------------------------------------
+# Globals — the hosting provider sets HAX_ADMIN_USER / HAX_ADMIN_PASS through
+# their client interface. The setupUser action applies them to the HAXcms
+# admin account after install (review fix #15).
+# -----------------------------------------------------------------------------
+
+globals:
+  HAX_ADMIN_USER:
+    type: string
+    default: haxadmin
+  HAX_ADMIN_PASS:
+    type: string
+    isPassword: true
+    default: ${fn.password(10)}
+
+# -----------------------------------------------------------------------------
+# Settings form
+# -----------------------------------------------------------------------------
+
+settings:
+  fields:
+    - name: skipLE
+      type: boolean
+      caption: "Skip Let's Encrypt (Reclaim Cloud / Jelastic already manages SSL)"
+      default: false
+
+    - name: configureAzure
+      type: boolean
+      caption: "Configure Azure AD SSO on this install"
+      default: false
+
+    # Four sub-fields appearing only when configureAzure is checked,
+    # WordPress-JPS style: showIf on the parent checkbox.
+    - showIf:
+        configureAzure: true
+      fields:
+        - name: azureTenantId
+          type: string
+          caption: "Azure AD Tenant ID"
+          required: true
+        - name: azureClientId
+          type: string
+          caption: "Azure App Registration Client ID"
+          required: true
+        - name: azureClientSecret
+          type: string
+          inputType: password
+          caption: "Azure App Registration Client Secret (encrypted at rest)"
+          required: true
+        - name: azureRedirectDomain
+          type: string
+          caption: "Public domain for Azure redirect URI (auto-detect if blank)"
+          default: ""
+
+# -----------------------------------------------------------------------------
+# onInstall — the entry point for executing actions (JPS spec).
+# Actions run sequentially in list order. Conditional execution uses `if`.
+# -----------------------------------------------------------------------------
+
+onInstall:
+  - configSystem
+  - deployApp
+  - setupUser
+  - if:
+      skipLE: false
+    installAddon:
+      id: lets-encrypt
+      name: "Let's Encrypt"
+    setAddonEnv:
+      env_domain: ${env.domain}
+  - if:
+      configureAzure: true
+    configureAzure: {}
+
+# -----------------------------------------------------------------------------
+# Named actions — each is a key in the actions mapping (JPS spec).
+# -----------------------------------------------------------------------------
+
+actions:
+
+  # 1. configSystem. Install distro packages + Apache modules + write the
+  #    runtime IAM domain config so routing uses the real Jelastic domain
+  #    instead of the hax.WHATEVER.edu placeholder (review fix #2).
+  configSystem:
+    cmd[cp]: |
+      set -eu
+      export DEBIAN_FRONTEND=noninteractive
+      if ! grep -q '^VERSION_ID=' /etc/os-release; then
+        echo "[jps] ubuntu image missing /etc/os-release" 1>&2
+        exit 1
+      fi
+      apt-get update
+      apt-get install -y \
+        php8.3-fpm php8.3-zip php8.3-gd php8.3-xml php8.3-curl php8.3-mbstring php8.3-yaml \
+        apache2 brotli git
+      a2enmod proxy_fcgi mpm_event http2 ssl rewrite headers brotli
+      a2dismod mpm_prefork status
+      a2enconf php8.3-fpm
+      printf 'Protocols h2 http/1.1\n' > /etc/apache2/conf-available/http2.conf
+      a2enconf http2
+      # Write /var/IAMCONFIG.php with the Jelastic env domain so iamConfig.php
+      # uses the real domain instead of the hax.WHATEVER.edu boilerplate
+      # default (review fix #2).
+      cat > /var/IAMCONFIG.php <<IAMCFG
+      <?php
+      define('IAM_PROTOCOL', 'https://');
+      define('IAM_BASE_DOMAIN', '${env.domain}');
+      define('IAM_EMPOWERED', 'iam');
+      define('IAM_PRIVATE', 'courses');
+      define('IAM_OPEN', 'oer');
+      IAMCFG
+      service apache2 restart
+      echo "[jps] configSystem done"
+
+  # 2. deployApp. Hand off to the unified installer. Env vars carried
+  #    from the form fields map to the locked installer flags. The script
+  #    echoes the discovered webroot to stdout; setEnv captures it as
+  #    HAX_HAXIAM_DIR for subsequent actions (review fix #3).
+  deployApp:
+    cmd[cp]: |
+      bash ${baseUrl}/scripts/deploy-app.sh
+    env:
+      AZURE_CONFIGURED: ${settings.configureAzure}
+      AZ_TENANT:        ${settings.azureTenantId}
+      AZ_CLIENT:        ${settings.azureClientId}
+      AZ_SECRET:        ${settings.azureClientSecret}
+      AZ_DOMAIN:        ${settings.azureRedirectDomain}
+    setEnv:
+      HAX_HAXIAM_DIR: ${response}
+
+  # 3. setupUser. Applies the hosting-provider admin credentials to the
+  #    HAXcms core's _config/config.php, overriding the random uuidgen
+  #    credentials the installer generated (review fix #15).
+  setupUser:
+    cmd[cp]: |
+      bash ${baseUrl}/scripts/setup-user.sh
+    env:
+      HAX_ADMIN_USER: ${globals.HAX_ADMIN_USER}
+      HAX_ADMIN_PASS: ${globals.HAX_ADMIN_PASS}
+
+  # 4. configureAzure. Only when Configure Azure AD SSO was CHECKED.
+  #    Writes _iamConfig/azure.json to the locked schema, sets 0600 +
+  #    chowns to www-data for owner-only access, then runs
+  #    scripts/utilities/check-azure-sso.sh from the install root.
+  configureAzure:
+    cmd[cp]: |
+      set -eu
+      IAM_DIR="${HAX_HAXIAM_DIR:-/var/www/iam}"
+      mkdir -p "${IAM_DIR}/_iamConfig"
+
+      # Values are passed via the action env block (review fix #2) so
+      # shell metacharacters in secrets can't inject commands.
+      TENANT="${AZ_TENANT}"
+      CLIENT="${AZ_CLIENT}"
+      SECRET="${AZ_SECRET}"
+      DOM="${AZ_DOMAIN}"
+      [ -n "$DOM" ] || DOM="${env.domain}"
+      [ -n "$DOM" ] || HOST_FALLBACK="$(hostname -f 2>/dev/null || hostname)"
+      [ -n "$DOM" ] && HOST_BASE="$DOM" || HOST_BASE="${HOST_FALLBACK}"
+
+      REDIRECT_URI="https://${HOST_BASE}/oauth-callback.php"
+      ISSUER="https://login.microsoftonline.com/${TENANT}/v2.0"
+      SCOPES="openid profile email"
+
+      # python3 -c with json.dump for proper JSON escaping.
+      # Write to a temp file first, then atomically rename (review
+      # previously-missed #1: direct open() can leave a truncated file
+      # if Apache reads mid-write).
+      AZ_TENANT_VAL="$TENANT" AZ_CLIENT_VAL="$CLIENT" AZ_SECRET_VAL="$SECRET" \
+        REDIRECT_VAL="$REDIRECT_URI" ISSUER_VAL="$ISSUER" SCOPES_VAL="$SCOPES" \
+        JSON_FILE="${IAM_DIR}/_iamConfig/azure.json.tmp.$$" \
+        python3 -c 'import json,os; d={"enabled":True,"tenantId":os.environ["AZ_TENANT_VAL"],"clientId":os.environ["AZ_CLIENT_VAL"],"clientSecret":os.environ["AZ_SECRET_VAL"],"redirectUri":os.environ["REDIRECT_VAL"],"issuer":os.environ["ISSUER_VAL"],"scopes":os.environ["SCOPES_VAL"],"providerClass":"AzureOIDC"}; f=open(os.environ["JSON_FILE"],"w"); json.dump(d,f,indent=4); f.write(chr(10)); f.close()'
+      chmod 0600 "${IAM_DIR}/_iamConfig/azure.json.tmp.$$"
+      chown www-data:www-data "${IAM_DIR}/_iamConfig/azure.json.tmp.$$"
+      mv "${IAM_DIR}/_iamConfig/azure.json.tmp.$$" "${IAM_DIR}/_iamConfig/azure.json"
+
+      # Validation utility — run from IAM_DIR so check-azure-sso.sh
+      # finds _iamConfig/azure.json relative to the install root
+      # (review previously-missed #1).
+      if [ -x "${IAM_DIR}/scripts/utilities/check-azure-sso.sh" ]; then
+        cd "${IAM_DIR}" && bash scripts/utilities/check-azure-sso.sh
+      else
+        printf '[jps] configureAzure: %s not found, skipping live JWKS check\n' \
+          "scripts/utilities/check-azure-sso.sh" 1>&2
+      fi
+    env:
+      AZ_TENANT: ${settings.azureTenantId}
+      AZ_CLIENT: ${settings.azureClientId}
+      AZ_SECRET: ${settings.azureClientSecret}
+      AZ_DOMAIN: ${settings.azureRedirectDomain}
+
+# -----------------------------------------------------------------------------
+# Success — green block the operator sees after install completes.
+# -----------------------------------------------------------------------------
+
+success:
+  color: green
+  message: "{{ANSI_GREEN}}HAXiam installed.{{ANSI_RESET}}\n\nAdmin URL:\n  https://${env.domain}/\nUsername:\n  ${globals.HAX_ADMIN_USER}\nSet or retrieve your password via the hosting provider's account management interface.\nAzure AD redirect URI (if SSO enabled):\n  https://${env.domain}/oauth-callback.php\n"
+  attachToPHPLink: false

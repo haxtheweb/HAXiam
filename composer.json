@@ -1,0 +1,17 @@
+{
+    "name": "haxtheweb/haxiam",
+    "description": "HAXiam — Identity & Access Manager for HAXcms. Native Azure OAuth2/OIDC integration (composer deps from issue #3070).",
+    "type": "project",
+    "license": "Apache-2.0",
+    "require": {
+        "php": "^8.1",
+        "league/oauth2-client": "^2.6",
+        "firebase/php-jwt": "^7.0"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "autoload": {
+        "classmap": ["system/lib/"]
+    }
+}

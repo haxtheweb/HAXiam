@@ -2,5 +2,7 @@ users/
 users_sites/
 _iamConfig/
 cores/HAXcms-1.x.x
+vendor/
 .DS_Store
 .vscode
+security_best_practices_report.md
