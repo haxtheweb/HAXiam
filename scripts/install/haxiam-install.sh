@@ -407,11 +407,16 @@ if [[ ! -f _config/IAM ]]; then
   # Redirect haxtheweb.sh's stdout (which prints the password in its
   # completion banner) to a log file so it doesn't leak into CI/JPS/Docker
   # logs (review fix #11). Preserve exit status.
-  bash scripts/haxtheweb.sh "${user}" "${pass}" >/tmp/haxtheweb-bootstrap.log 2>&1 || {
-    install_red "haxtheweb.sh failed."
-    cat /tmp/haxtheweb-bootstrap.log >&2
+  # Log goes to a private mktemp file (0600) removed on exit; it is never
+  # printed on failure because it contains the generated credentials.
+  BOOTSTRAP_LOG="$(mktemp)" || { install_red "mktemp failed."; exit 3; }
+  chmod 600 "${BOOTSTRAP_LOG}"
+  trap 'rm -f "${BOOTSTRAP_LOG}"' EXIT
+  bash scripts/haxtheweb.sh "${user}" "${pass}" >"${BOOTSTRAP_LOG}" 2>&1 || {
+    install_red "haxtheweb.sh failed (output withheld because it may contain credentials)."
     exit 3
   }
+  rm -f "${BOOTSTRAP_LOG}"
   touch _config/IAM
   # The generated credentials are for first-login reference only; on a real
   # install the operator must rotate them via the IAM admin UI.
