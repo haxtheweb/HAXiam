@@ -85,14 +85,14 @@ if (!isset($_SESSION['HAXIAM_USER']) || $_SESSION['HAXIAM_USER'] == '') {
     // Azure is enabled but no OIDC session — don't fall back; the downstream
     // routing will redirect to login.php which kicks the Azure authorize flow.
   }
-  else if (isset($_SERVER['REMOTE_USER'])) {
+  else if (isset($_SERVER['REMOTE_USER']) && IAM::isValidUserName($_SERVER['REMOTE_USER'])) {
     // Security (M3): rotate the session ID on the unauthenticated->authenticated
     // transition so a session ID fixed before login can't persist into the
     // authenticated session (mirrors oauth-callback.php's session_regenerate_id).
     session_regenerate_id(true);
     $_SESSION['HAXIAM_USER'] = $_SERVER['REMOTE_USER'];
   }
-  else if (isset($_SERVER['PHP_AUTH_USER'])) {
+  else if (isset($_SERVER['PHP_AUTH_USER']) && IAM::isValidUserName($_SERVER['PHP_AUTH_USER'])) {
     session_regenerate_id(true);
     $_SESSION['HAXIAM_USER'] = $_SERVER['PHP_AUTH_USER'];
   }
