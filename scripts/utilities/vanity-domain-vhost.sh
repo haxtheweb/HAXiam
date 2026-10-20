@@ -24,9 +24,8 @@
 #   ServerName haxtheweb.org
 #   DocumentRoot /var/www/oer/<iam-username>/sites/<site-machine-name>/
 #   SetEnv HAXSITE_BASE_URL /
-#   <Directory /var/www/oer/>
-#           Options Indexes FollowSymLinks
-#           Header set Access-Control-Allow-Origin "*"
+#   <Directory /var/www/oer/<iam-username>/sites/<site-machine-name>/>
+#           Options -Indexes +FollowSymLinks
 #           AllowOverride All
 #   </Directory>
 # This script generates that same shape of stanza for any other IAM user/site:
@@ -52,7 +51,7 @@
 
 # where am i? move to where I am. This ensures source is properly sourced
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd $DIR
+cd "$DIR"
 cd ../../
 source _iamConfig/config.cfg
 
@@ -85,7 +84,6 @@ fi
 # Apache's <Directory> AllowOverride match is unambiguous regardless of which
 # alias someone later points DocumentRoot at.
 realSitePath="${haxiam}/users_sites/${user}/_sites/${site}"
-sitesRootPath="${haxiam}/users_sites"
 
 if [ ! -d "$realSitePath" ]; then
   elmslnwarn "Warning: ${realSitePath} does not exist yet. Double check the username/site-name, or create the site first."
@@ -112,9 +110,11 @@ cat <<VHOST
         # Tells HAXcms the app is being served at the domain root instead of
         # under /<user>/sites/<site>/ so base tag / routing resolve correctly.
         SetEnv HAXSITE_BASE_URL /
-        <Directory ${sitesRootPath}/>
-                Options Indexes FollowSymLinks
-                Header set Access-Control-Allow-Origin "*"
+        # Scoped to this one site (not the whole users_sites tree) so the
+        # permissive AllowOverride/Require apply only to what this vhost serves.
+        # Directory listing is disabled; no wildcard CORS header is emitted.
+        <Directory ${resolvedRealSitePath}/>
+                Options -Indexes +FollowSymLinks
                 # Must be All (not just for the symlink alias) so this site's
                 # own .htaccess pretty-URL rewrite rules are honored for deep
                 # links (e.g. /some-page), not just the homepage.
@@ -135,5 +135,5 @@ VHOST
 elmslnecho ""
 elmslnwarn "Sanity checks before enabling:"
 elmslnwarn "  - Confirm ${resolvedRealSitePath}/.htaccess and config.php exist"
-elmslnwarn "  - Confirm mod_rewrite, mod_ssl, mod_headers are enabled (a2enmod)"
+elmslnwarn "  - Confirm mod_rewrite and mod_ssl are enabled (a2enmod)"
 elmslnwarn "  - After enabling, test both the homepage and a deep link (e.g. https://${domain}/some-page)"
