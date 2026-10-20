@@ -23,9 +23,25 @@ class IAM {
     $this->enterprise = new stdClass();
   }
   /**
+   * Validate a username before it is used as a single path component
+   * (users/<name>, users_sites/<name>) or stored as HAXIAM_USER. Rejects
+   * empty values, separators, traversal ("..") and leading dots/dashes.
+   * '@' is allowed because REMOTE_USER from Shibboleth is commonly an email.
+   */
+  public static function isValidUserName($name) {
+    return is_string($name)
+      && strlen($name) <= 128
+      && preg_match('/^[A-Za-z0-9][A-Za-z0-9._@-]*$/', $name) === 1
+      && strpos($name, '..') === false;
+  }
+  /**
    * Replicate and establish a new HAXcms manager
    */
   public function liberate($targetDir, $core = HAXIAM_ACTIVE_CORE) {
+    // never build filesystem paths from an unvalidated username
+    if (!self::isValidUserName($targetDir)) {
+      return FALSE;
+    }
     // open HAXcms directory
     $dir = opendir($this->coresDir . '/' . $core);
     $userDir = IAM_ROOT . '/users/' . $targetDir;

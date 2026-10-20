@@ -94,7 +94,7 @@ try {
     $user = null;
 }
 
-if (!is_string($user) || trim($user) === '') {
+if (!is_string($user) || trim($user) === '' || !IAM::isValidUserName($user)) {
     // Failure path: NO refresh token issued (invariant #8 contract).
     header('Location: login.php?sso_error=callback_failed');
     exit;
