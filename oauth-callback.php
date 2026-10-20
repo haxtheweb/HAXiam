@@ -30,6 +30,20 @@ define('IAM_INTERNALS', 'oauth-callback');
 // Preserve any pre-existing session data before session_start.
 $session_data = isset($_SESSION) ? $_SESSION : null;
 if (session_status() !== PHP_SESSION_ACTIVE) {
+    // Harden the session cookie: HttpOnly, SameSite=Lax (Lax is required so the
+    // top-level redirect back from the IdP still carries the session), Secure
+    // over HTTPS, and strict mode so unknown/attacker-chosen IDs are rejected.
+    $__iam_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+      || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.use_only_cookies', '1');
+    session_set_cookie_params(array(
+      'lifetime' => 0,
+      'path' => '/',
+      'secure' => $__iam_https,
+      'httponly' => true,
+      'samesite' => 'Lax',
+    ));
     session_start();
 }
 if (!empty($session_data)) {
