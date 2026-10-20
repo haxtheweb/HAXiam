@@ -9,7 +9,7 @@ version: 1.0.0
 
 # Where Jelastic pulls helper scripts from. The scripts/ folder in this
 # repo on this branch is mirrored under baseUrl/scripts/.
-baseUrl: https://raw.githubusercontent.com/haxtheweb/HAXiam/plan/3070-haxiam-jps/haxiam-jps/
+baseUrl: https://raw.githubusercontent.com/haxtheweb/HAXiam/master/haxiam-jps/
 
 ssl: true
 skipNodeEmails: true

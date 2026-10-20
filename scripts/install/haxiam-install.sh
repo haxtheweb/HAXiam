@@ -390,10 +390,24 @@ if [[ ! -d "${HAXCMS_DIR}" ]]; then
   install_green "Cloning ${HAXCMS_CORE}..."
   mkdir -p cores
   cd cores
+  # HAXCMS_REF pins the haxcms-php checkout to a release tag or commit SHA
+  # (e.g. HAXCMS_REF=v11.0.0 or a full commit hash) so installs are
+  # reproducible and not exposed to unreviewed upstream changes. When unset
+  # the default branch is used, as before. Set it for production installs.
+  HAXCMS_REF="${HAXCMS_REF:-}"
   git clone https://github.com/haxtheweb/haxcms-php.git "${HAXCMS_CORE}" || {
     install_red "git clone of ${HAXCMS_CORE} failed."
     exit 3
   }
+  if [[ -n "${HAXCMS_REF}" ]]; then
+    git -C "${HAXCMS_CORE}" checkout --quiet "${HAXCMS_REF}" || {
+      install_red "could not check out HAXCMS_REF=${HAXCMS_REF} in ${HAXCMS_CORE}."
+      exit 3
+    }
+    install_green "Pinned ${HAXCMS_CORE} to ${HAXCMS_REF}."
+  else
+    install_red "HAXCMS_REF is not set: ${HAXCMS_CORE} tracks the upstream default branch. Set HAXCMS_REF to a tag or commit to pin it."
+  fi
   cd "${HAXCMS_CORE}"
 else
   install_green "${HAXCMS_DIR} already present - skipping clone."
