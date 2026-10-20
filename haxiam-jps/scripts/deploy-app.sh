@@ -38,7 +38,7 @@ haxecho "deploy-app: webroot = ${WEBROOT}"
 mkdir -p "${WEBROOT}"
 
 # 2. Clone or skip.
-BRANCH="${HAX_HAXIAM_BRANCH:-plan/3070-haxiam-jps}"
+BRANCH="${HAX_HAXIAM_BRANCH:-master}"
 REPO="${HAX_HAXIAM_REPO:-https://github.com/haxtheweb/HAXiam.git}"
 
 # Clone into a temp dir first, then merge into the webroot (review
