@@ -53,7 +53,7 @@ globals:
   HAX_ADMIN_PASS:
     type: string
     isPassword: true
-    default: ${fn.password(10)}
+    default: ${fn.password(16)}
 
 # -----------------------------------------------------------------------------
 # Settings form
