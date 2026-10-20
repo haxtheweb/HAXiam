@@ -539,6 +539,10 @@ class AzureOIDC
         if (!isset($claims['iss']) || !is_string($claims['iss']) || $claims['iss'] !== $expectedIssuer) {
             return null;
         }
+        // Tenant binding: the token must have been issued by OUR tenant.
+        if (!isset($claims['tid']) || !is_string($claims['tid']) || strcasecmp($claims['tid'], (string)$tenantId) !== 0) {
+            return null;
+        }
         $audOk = false;
         if (isset($claims['aud'])) {
             if (is_string($claims['aud']) && $claims['aud'] === $expectedAudience) {
@@ -581,6 +585,9 @@ class AzureOIDC
         // oauth-callback.php can bind users/<name> to a specific identity and
         // block cross-identity collisions (H2).
         $this->lastRawIdentity = (is_string($candidate) && $candidate !== '') ? $candidate : null;
+        // Immutable object id, stored in the identity marker so a reassigned
+        // UPN/email cannot take over an existing user directory.
+        $this->lastOid = (isset($claims['oid']) && is_string($claims['oid']) && trim($claims['oid']) !== '') ? $claims['oid'] : null;
         $safe = $this->sanitizeUserName($candidate);
         if ($safe === '') {
             return null;
@@ -844,9 +851,10 @@ class AzureOIDC
      * @param string $userDir     absolute path to users/<name>
      * @param string $markerPath  absolute path to _iamConfig/identities/<name>.json
      * @param string $rawIdentity full UPN/email from the ID token
+     * @param string|null $oid    optional immutable `oid` claim; when the marker holds one it must match
      * @return string
      */
-    public static function resolveIdentityConflict($userDir, $markerPath, $rawIdentity)
+    public static function resolveIdentityConflict($userDir, $markerPath, $rawIdentity, $oid = null)
     {
         if (!is_string($markerPath) || trim($markerPath) === '') {
             return 'conflict';
@@ -856,10 +864,11 @@ class AzureOIDC
             return 'new';
         }
         if (!is_file($markerPath)) {
-            // Legacy directory pre-dating this guard. Back-fill so a future
-            // cross-identity collision is caught rather than silently allowed.
-            self::writeIdentityMarker($markerPath, $rawIdentity);
-            return 'ok';
+            // Directory exists but has no identity marker (legacy / manually
+            // created). We cannot prove it belongs to this identity, so do NOT
+            // auto-bind. An operator must create the marker
+            // (_iamConfig/identities/<name>.json with {"upn": "..."}) to claim it.
+            return 'conflict';
         }
         $raw = @file_get_contents($markerPath);
         if ($raw === false) {
@@ -869,14 +878,17 @@ class AzureOIDC
         $data = json_decode($raw, true);
         $bound = (is_array($data) && isset($data['upn']) && is_string($data['upn'])) ? $data['upn'] : '';
         if ($bound === '') {
-            // Corrupt/empty marker — back-fill with the current identity.
-            self::writeIdentityMarker($markerPath, $rawIdentity);
-            return 'ok';
+            // Corrupt/empty marker — cannot prove ownership; fail closed.
+            return 'conflict';
         }
-        if ($bound === $rawIdentity) {
-            return 'ok';
+        if ($bound !== $rawIdentity) {
+            return 'conflict';
         }
-        return 'conflict';
+        $boundOid = (isset($data['oid']) && is_string($data['oid'])) ? $data['oid'] : '';
+        if ($boundOid !== '' && (!is_string($oid) || $oid === '' || !hash_equals($boundOid, $oid))) {
+            return 'conflict';
+        }
+        return 'ok';
     }
 
     /**
@@ -887,13 +899,13 @@ class AzureOIDC
      * @param string $markerPath  absolute path to _iamConfig/identities/<name>.json
      * @param string $rawIdentity full UPN/email from the ID token
      */
-    public static function bindNewUserIdentity($userDir, $markerPath, $rawIdentity)
+    public static function bindNewUserIdentity($userDir, $markerPath, $rawIdentity, $oid = null)
     {
         if (!is_string($userDir) || !is_dir($userDir)) {
             return;
         }
         if (!is_file($markerPath)) {
-            self::writeIdentityMarker($markerPath, $rawIdentity);
+            self::writeIdentityMarker($markerPath, $rawIdentity, $oid);
         }
     }
 
@@ -904,13 +916,16 @@ class AzureOIDC
      * @param string $markerPath
      * @param string $rawIdentity
      */
-    protected static function writeIdentityMarker($markerPath, $rawIdentity)
+    protected static function writeIdentityMarker($markerPath, $rawIdentity, $oid = null)
     {
         $dir = dirname($markerPath);
         if (!is_dir($dir)) {
             @mkdir($dir, 0750, true);
         }
         $payload = array('upn' => is_string($rawIdentity) ? $rawIdentity : '', 'createdAt' => time());
+        if (is_string($oid) && $oid !== '') {
+            $payload['oid'] = $oid;
+        }
         @file_put_contents($markerPath, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
         @chmod($markerPath, 0640);
     }

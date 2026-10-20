@@ -96,7 +96,7 @@ $rawIdentity = (is_string($oauth_provider->lastRawIdentity) && trim($oauth_provi
     ? $oauth_provider->lastRawIdentity : $user;
 $_userDir = IAM_ROOT . '/users/' . $user;
 $_markerPath = IAM_ROOT . '/_iamConfig/identities/' . $user . '.json';
-$_identityStatus = AzureOIDC::resolveIdentityConflict($_userDir, $_markerPath, $rawIdentity);
+$_identityStatus = AzureOIDC::resolveIdentityConflict($_userDir, $_markerPath, $rawIdentity, $oauth_provider->lastOid);
 if ($_identityStatus === 'conflict') {
     // Directory already bound to a different identity — block, no token.
     header('Location: login.php?sso_error=identity_conflict');
@@ -137,10 +137,10 @@ if (method_exists($HAXCMS, 'getRefreshToken') && method_exists($HAXCMS, 'setRefr
 if (!is_dir(IAM_ROOT . '/users/' . $user)) {
     $IAM->liberate($user);
 }
-// Bind the freshly-liberated (or legacy un-bound) directory to this identity
+// Bind the freshly-liberated directory to this identity
 // so a future login by a different identity that sanitizes to the same name
 // is blocked instead of mapping into this space (H2).
-AzureOIDC::bindNewUserIdentity(IAM_ROOT . '/users/' . $user, $_markerPath, $rawIdentity);
+AzureOIDC::bindNewUserIdentity(IAM_ROOT . '/users/' . $user, $_markerPath, $rawIdentity, $oauth_provider->lastOid);
 
 header('Location: ' . $IAM->enterprise->iamUrl . $user);
 exit;

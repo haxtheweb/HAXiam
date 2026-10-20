@@ -218,6 +218,7 @@ try {
 
     $fakeClaims = (object) array(
         'iss' => 'https://login.microsoftonline.com/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/v2.0',
+        'tid' => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
         'aud' => '11111111-2222-3333-4444-555555555555',
         'exp' => time() + 600,
         'preferred_username' => 'Jane.Doe@Example.edu',
@@ -424,9 +425,9 @@ try {
     $h2LegacyDir = $sandbox . '/users/legacy';
     $h2LegacyMarker = $identDir . '/legacy.json';
     @mkdir($h2LegacyDir, 0755, true);
-    check(AzureOIDC::resolveIdentityConflict($h2LegacyDir, $h2LegacyMarker, 'legacy@Example.edu') === 'ok', 'resolveIdentityConflict backfills legacy dir without locking user out', $passes, $failures);
-    check(is_file($h2LegacyMarker), 'legacy back-fill wrote marker', $passes, $failures);
-    check(AzureOIDC::resolveIdentityConflict($h2LegacyDir, $h2LegacyMarker, 'legacy@Other.edu') === 'conflict', 'resolveIdentityConflict conflict on back-filled legacy name', $passes, $failures);
+    check(AzureOIDC::resolveIdentityConflict($h2LegacyDir, $h2LegacyMarker, 'legacy@Example.edu') === 'conflict', 'resolveIdentityConflict refuses to auto-bind a legacy dir without marker', $passes, $failures);
+    check(!is_file($h2LegacyMarker), 'legacy dir was not auto-bound', $passes, $failures);
+    check(AzureOIDC::resolveIdentityConflict($h2LegacyDir, $h2LegacyMarker, 'legacy@Other.edu') === 'conflict', 'resolveIdentityConflict conflict on unbound legacy name', $passes, $failures);
 
     // Reset test seams between runs.
     AzureOIDC::resetJwksHttpFetcher();
