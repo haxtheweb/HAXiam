@@ -39,15 +39,15 @@ else {
 }
 $IAM->HAXcmsInit($HAXCMS);
 $IAM->enterprise->iamUrl = IAM_PROTOCOL . IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN . '/';
-$IAM->enterprise->logout = 'https://login.microsoftonline.com/your_tenant_id/oauth2/v2.0/logout';
+// logout.php destroys the local session + cookies, then redirects to the IdP logout.
+$IAM->enterprise->logout = '/logout.php';
 $IAM->enterprise->login = '/login.php';
 // --------------------------------------------------------------------------
 // Azure AD / OIDC bridge (issue #3070, _contracts/azure_json_schema.md).
 // If _iamConfig/azure.json exists AND AzureOIDC::isEnabled() returns true,
 // we treat $_SESSION['HAXIAM_USER'] set by oauth-callback.php as the
-// authoritative source for $_SESSION['HAXIAM_USER'] below, AND we override
-// the logout URL to the real tenant logout URL (no more 'your_tenant_id'
-// placeholder). The legacy REMOTE_USER / PHP_AUTH_USER fallback block a
+// authoritative source for $_SESSION['HAXIAM_USER'] below, AND logout.php
+// redirects to the real tenant logout URL after clearing local state. The legacy REMOTE_USER / PHP_AUTH_USER fallback block a
 // few lines down stays untouched so Shibboleth / Apache-module installs
 // keep working unchanged.
 // Load the AzureOIDC class so class_exists() can find it. composer.json
@@ -71,7 +71,8 @@ if (
     $__azure_oidc = AzureOIDC::load(IAM_ROOT . '/_iamConfig/azure.json');
     if ($__azure_oidc->isEnabled()) {
       $azure_enabled_bridge = true;
-      $IAM->enterprise->logout = $__azure_oidc->getLogoutUrl();
+      // logout stays /logout.php, which redirects to $__azure_oidc->getLogoutUrl()
+      // after clearing the local session and cookies.
     }
   } catch (Throwable $__azure_bridge_err) {
     // Fail closed: silently fall through to the legacy REMOTE_USER path.
