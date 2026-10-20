@@ -436,8 +436,8 @@ class AzureOIDC
 
         // Pull the OIDC nonce + PKCE verifier stashed by login.php before
         // clearing them, so we can bind the ID token to this request (M4)
-        // and redeem the code with the verifier (M5). Both are optional:
-        // legacy/test sessions that didn't set them simply skip the checks.
+        // and redeem the code with the verifier (M5). The nonce is
+        // mandatory; the PKCE verifier is used when present.
         $nonceStored = isset($_SESSION['oauth_nonce']) ? (string)$_SESSION['oauth_nonce'] : '';
         $codeVerifierStored = isset($_SESSION['oauth_code_verifier']) ? (string)$_SESSION['oauth_code_verifier'] : '';
         unset($_SESSION['oauth_nonce'], $_SESSION['oauth_code_verifier']);
@@ -560,10 +560,12 @@ class AzureOIDC
         // OIDC nonce (M4): when login.php sent a nonce, the ID token MUST
         // echo it back. A mismatch means the token wasn't minted for this
         // authorization request (replay / token substitution).
-        if ($nonceStored !== '') {
-            if (!isset($claims['nonce']) || !is_string($claims['nonce']) || !hash_equals($nonceStored, (string)$claims['nonce'])) {
-                return null;
-            }
+        // The nonce is mandatory: a session with no stored nonce, or a token
+        // without (or with a different) nonce claim, is rejected.
+        if ($nonceStored === ''
+            || !isset($claims['nonce']) || !is_string($claims['nonce'])
+            || !hash_equals($nonceStored, (string)$claims['nonce'])) {
+            return null;
         }
 
         // Step 5: derive a machine-name-safe username.

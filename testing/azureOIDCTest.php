@@ -215,6 +215,7 @@ try {
     $provider = AzureOIDC::load($sandbox . '/_iamConfig/azure.json');
     $_SESSION = array();
     $_SESSION['oauth_state'] = $state;
+    $_SESSION['oauth_nonce'] = 'happy-nonce';
 
     $fakeClaims = (object) array(
         'iss' => 'https://login.microsoftonline.com/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/v2.0',
@@ -223,6 +224,7 @@ try {
         'preferred_username' => 'Jane.Doe@Example.edu',
         'email' => 'jane.doe@example.edu',
         'oid' => 'aaaaaaaa',
+        'nonce' => 'happy-nonce',
     );
 
     AzureOIDC::setJwksHttpFetcher(function ($url) {
