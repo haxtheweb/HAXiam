@@ -677,7 +677,13 @@ PY
 
   # Validate. Never echo the secret; report length only.
   echo "Azure: <set>  tenant=<set>  client=<set>  secret=<len-${#AZ_SECRET}>"
-  bash "${AZURE_CHECK}" || { install_red "check-azure-sso.sh failed; see _iamConfig/azure.json and run it again to diagnose."; exit 5; }
+  # HAXIAM_AZURE_SKIP_CHECK=1 skips the live call to Microsoft (offline/demo/CI
+  # containers with placeholder tenants). Never set it on a real deployment.
+  if [[ "${HAXIAM_AZURE_SKIP_CHECK:-}" == "1" ]]; then
+    install_red "HAXIAM_AZURE_SKIP_CHECK=1: skipping check-azure-sso.sh (tenant not validated)."
+  else
+    bash "${AZURE_CHECK}" || { install_red "check-azure-sso.sh failed; see _iamConfig/azure.json and run it again to diagnose."; exit 5; }
+  fi
   install_green "${REDIRECT_URI}"   # invariant #5 - admin copies this into Azure.
   install_green "Azure config ok."
 else

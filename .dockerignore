@@ -1,0 +1,14 @@
+.git
+.github
+.ddev
+.travis.yml
+haxiam-jps
+testing
+vendor
+_iamConfig
+cores/HAXcms-1.x.x
+users/*
+!users/403.php
+users_sites/*
+!users_sites/403.php
+**/.DS_Store

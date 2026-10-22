@@ -158,10 +158,14 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
     // centralized Secure/SameSite/HttpOnly cookie flags, matching normal login.
     // Falls back to the legacy raw setcookie only if the helper is unavailable
     // on an older core.
-    if (method_exists($HAXCMS, 'getRefreshToken') && method_exists($HAXCMS, 'setRefreshTokenCookie')) {
+    // $HAXCMS is null when this file is included from login.php, which loads
+    // iamConfig.php BEFORE bootstrapping the core; method_exists(null, ...) is a
+    // TypeError on PHP 8, so guard with is_object(). login.php issues the token
+    // itself after bootstrap.
+    if (is_object($HAXCMS) && method_exists($HAXCMS, 'getRefreshToken') && method_exists($HAXCMS, 'setRefreshTokenCookie')) {
       $HAXCMS->setRefreshTokenCookie($HAXCMS->getRefreshToken($IAM->enterprise->userVar));
     }
-    else if (method_exists($HAXCMS, 'getRefreshToken')) {
+    else if (is_object($HAXCMS) && method_exists($HAXCMS, 'getRefreshToken')) {
       // Security (H3): set Secure when on TLS so the bearer token isn't sent
       // over plain HTTP (matches oauth-callback.php).
       $_isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
@@ -209,10 +213,11 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
     $IAM->enterprise->userVar = $_SESSION['HAXIAM_USER'];
     // Security (H1 rotation / M3 parity): issue via the core helper so HAXiam
     // gets a rotating family/jti refresh token + centralized cookie flags.
-    if (method_exists($HAXCMS, 'getRefreshToken') && method_exists($HAXCMS, 'setRefreshTokenCookie')) {
+    // is_object() guard: $HAXCMS is null when included from login.php (see above).
+    if (is_object($HAXCMS) && method_exists($HAXCMS, 'getRefreshToken') && method_exists($HAXCMS, 'setRefreshTokenCookie')) {
       $HAXCMS->setRefreshTokenCookie($HAXCMS->getRefreshToken($IAM->enterprise->userVar));
     }
-    else if (method_exists($HAXCMS, 'getRefreshToken')) {
+    else if (is_object($HAXCMS) && method_exists($HAXCMS, 'getRefreshToken')) {
       // Security (H3): set Secure when on TLS so the bearer token isn't sent
       // over plain HTTP (matches oauth-callback.php).
       $_isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
@@ -222,11 +227,16 @@ else if (isset($_SESSION['HAXIAM_USER']) && $_SESSION['HAXIAM_USER'] != '') {
   }
   // we do have a user and if we end up getting here it means the other tests all passed
   // bind user name to the enterprise variable
-  $HAXCMS->userData->userName = $_SESSION['HAXIAM_USER'];
-  $HAXCMS->userData->userPicture = '';
-  // hide logout / special button
-  $HAXCMS->siteListing->slot = '';
-  $HAXCMS->siteListing->attr = 'hide-login hide-global-settings hide-camera';
+  // Only when $HAXCMS exists: login.php includes this file before bootstrapping
+  // the core, and writing properties on null is an Error on PHP 8. The core
+  // re-reads the session user when it loads this file via HAXcmsConfig.php.
+  if (is_object($HAXCMS)) {
+    $HAXCMS->userData->userName = $_SESSION['HAXIAM_USER'];
+    $HAXCMS->userData->userPicture = '';
+    // hide logout / special button
+    $HAXCMS->siteListing->slot = '';
+    $HAXCMS->siteListing->attr = 'hide-login hide-global-settings hide-camera';
+  }
 }
 // not logged in but trying to access iam based address
 else if (isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] == IAM_EMPOWERED . '.' . IAM_BASE_DOMAIN) {
