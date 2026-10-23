@@ -87,3 +87,7 @@ bash scripts/utilities/vanity-domain-vhost.sh <iam-username> <site-machine-name>
 This only prints the suggested stanza to the console - it does not write any file or touch your live Apache configuration. Review the output, adjust SSL paths as needed, then add it to your own vhost file (e.g. `/etc/apache2/sites-available/<domain>.conf`) and enable/reload Apache yourself.
 
 After enabling, verify both the homepage and a deep link resolve dynamically (e.g. `https://<domain>/` and `https://<domain>/some-page`).
+
+## Security
+
+Recurring security audits of this repo start from `SECURITY-AUDIT.md` (read order, scope, commands, regression guards, reporting convention); the current audit state lives in `security_best_practices_report.md`. Report vulnerabilities privately per the HAX policy (see `haxcms-php/SECURITY.md`), never as public issues.
