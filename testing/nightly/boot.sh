@@ -175,14 +175,29 @@ mkdir -p /run/php
 service "php${PHPV}-fpm" restart
 grep -q '^ServerName ' /etc/apache2/apache2.conf || echo 'ServerName localhost' >> /etc/apache2/apache2.conf
 apache2ctl configtest
-service apache2 restart
+# The installer may already have started Apache with apache2ctl (outside
+# systemd), and a systemd restart then stops that copy without starting a new
+# one. Stop whichever is running and start a single instance directly.
+systemctl stop apache2 >/dev/null 2>&1 || true
+apache2ctl -k stop >/dev/null 2>&1 || true
+for _ in $(seq 1 10); do
+  pgrep -x apache2 >/dev/null || break
+  sleep 1
+done
+apache2ctl -k start
 for _ in $(seq 1 30); do
-  if curl -s -o /dev/null --max-time 3 "http://${BASE}/login.php"; then
+  if curl -s -o /dev/null --noproxy '*' --max-time 3 "http://${BASE}/login.php"; then
     echo "HAXiam is up on http://${BASE}/"
     exit 0
   fi
   sleep 1
 done
 echo "HAXiam did not come up" >&2
-tail -50 /var/log/apache2/error.log >&2 || true
+{
+  tail -50 /var/log/apache2/error.log
+  systemctl status apache2 --no-pager
+  ss -ltnp
+  grep -n "${BASE}" /etc/hosts
+  curl -sv --noproxy '*' --max-time 3 "http://${BASE}/login.php" -o /dev/null
+} >&2 2>&1 || true
 exit 1
