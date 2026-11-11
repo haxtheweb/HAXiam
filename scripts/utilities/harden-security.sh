@@ -57,5 +57,14 @@ for base in users users_sites; do
   done < <(find "$haxiam/$base" -maxdepth 1 -type d -print0)
 done
 # force permissions for cache directory used by gitlist
-chown "$wwwuser:$webgroup" _iamConfig/cache -v
-chmod 2755 _iamConfig/cache -v
+if [ -d _iamConfig/cache ]; then
+  chown "$wwwuser:$webgroup" _iamConfig/cache -v
+  chmod 2755 _iamConfig/cache -v
+fi
+# oauth-callback.php writes each user's identity marker here at first SSO
+# login; the web server must be able to write it (same mode the installer
+# sets), or the second login of every new user hits identity_conflict.
+if [ -d _iamConfig/identities ]; then
+  chown -R "$wwwuser:$webgroup" _iamConfig/identities
+  chmod 2750 _iamConfig/identities -v
+fi
