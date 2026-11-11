@@ -9,11 +9,16 @@
  * that filing was skipped; the failing workflow step is what turns the run red.
  *
  * Usage: php file-issues.php [--report report.json] [--failed-step <name>]...
+ *          [--scope haxcms-php]
+ *
+ * --scope names the backend a repo's own nightly checked, so its issues read
+ * `[nightly] haxiam: <scope> <check>`.
  */
 const ISSUES_REPO = 'haxtheweb/issues';
 const PREFIX = '[nightly] haxiam: ';
 
-$opts = getopt('', array('report:', 'failed-step:'));
+$opts = getopt('', array('report:', 'failed-step:', 'scope:'));
+$scope = isset($opts['scope']) ? trim($opts['scope']) : '';
 $failures = array();
 if (isset($opts['report']) && is_file($opts['report'])) {
     $report = json_decode((string) file_get_contents($opts['report']), true);
@@ -47,7 +52,7 @@ $repo = getenv('GITHUB_REPOSITORY') ?: 'haxtheweb/haxiam';
 $runUrl = getenv('GITHUB_RUN_ID') ? "$server/$repo/actions/runs/" . getenv('GITHUB_RUN_ID') : '';
 $sha = getenv('GITHUB_SHA') ?: 'unknown';
 
-say('## HAXiam nightly');
+say('## HAXiam nightly' . ($scope !== '' ? " ($scope)" : ''));
 say('');
 if (!count($failures)) {
     say('All checks passed against a throwaway install with the mock identity provider.');
@@ -103,7 +108,7 @@ try {
     exit(0);
 }
 foreach ($failures as $check => $list) {
-    $title = PREFIX . $check;
+    $title = PREFIX . ($scope !== '' ? $scope . ' ' : '') . $check;
     $body = implode("\n", array(
         'The HAXiam nightly failed this check against a throwaway CI install (mock identity provider, no live deployment).',
         '',

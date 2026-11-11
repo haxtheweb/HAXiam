@@ -6,12 +6,22 @@
  * accepts a *.test base domain.
  *
  * Usage: php testing/nightly/flows.php [--base haxiam.test] [--report out.json]
+ *          [--root /var/www/iam] [--groups "idp rejects,header size,logout"]
+ *
+ * --groups limits the optional groups; sso login, site creation and tenant
+ * isolation always run (the backend repos' nightlies run only those).
  *
  * Every assertion belongs to a named check; the report lists the failures per
  * check so the workflow can file one `[nightly] haxiam: <check>` issue each.
  * Exit 0 when everything passes, 1 otherwise.
  */
-$opts = getopt('', array('base:', 'report:', 'root:'));
+$opts = getopt('', array('base:', 'report:', 'root:', 'groups:'));
+$only = isset($opts['groups']) ? array_filter(array_map('trim', explode(',', $opts['groups']))) : null;
+function want($group)
+{
+    global $only;
+    return $only === null || in_array($group, $only, true);
+}
 $base = isset($opts['base']) ? $opts['base'] : 'haxiam.test';
 $reportPath = isset($opts['report']) ? $opts['report'] : '';
 $root = isset($opts['root']) ? $opts['root'] : '/var/www/iam';
@@ -324,21 +334,22 @@ $again = $alice->request('GET', "http://$base/login.php");
 ok($again['status'] >= 300 && $again['status'] < 400 && strpos($again['location'], "iam.$base/alice") !== false,
     'login.php with a live session redirects to the user\'s space', 'HTTP ' . $again['status'] . ' ' . $again['location']);
 
-check_group('idp rejects');
-foreach (array('forged' => 'an ID token signed by an unknown key', 'wrongnonce' => 'an ID token with the wrong nonce',
-    'wrongtenant' => 'an ID token from another tenant', 'expired' => 'an expired ID token') as $mode => $what) {
-    $x = new Browser("mallory-$mode");
-    $lx = sso_login($x, "mallory-$mode@example.test", $mode);
-    $sawToken = false;
-    foreach ($lx['hops'] as $h) {
-        foreach ($h['cookies'] as $c) {
-            if (stripos($c, 'haxcms_refresh_token=') === 0 && stripos($c, 'haxcms_refresh_token=deleted') !== 0) {
-                $sawToken = true;
+if (want('idp rejects')) {
+    check_group('idp rejects');
+    foreach (array('forged' => 'an ID token signed by an unknown key', 'wrongnonce' => 'an ID token with the wrong nonce',
+        'wrongtenant' => 'an ID token from another tenant', 'expired' => 'an expired ID token') as $mode => $what) {
+        $x = new Browser("mallory-$mode");
+        $lx = sso_login($x, "mallory-$mode@example.test", $mode);
+        $sawToken = false;
+        foreach ($lx['hops'] as $h) {
+            foreach ($h['cookies'] as $c) {
+                if (stripos($c, 'haxcms_refresh_token=') === 0 && stripos($c, 'haxcms_refresh_token=deleted') !== 0) {
+                    $sawToken = true;
+                }
             }
         }
-    }
-    ok(strpos($lx['finalUrl'], 'sso_error=callback_failed') !== false && !$sawToken && !is_dir("$root/users/mallory-$mode"),
-        "callback rejects $what (no refresh token, no user space)", hops_text($lx));
+        ok(strpos($lx['finalUrl'], 'sso_error=callback_failed') !== false && !$sawToken && !is_dir("$root/users/mallory-$mode"),
+            "callback rejects $what (no refresh token, no user space)", hops_text($lx));
 }
 // replayed / forged state
 $x = new Browser('mallory-state');
@@ -350,6 +361,7 @@ $evil = new Browser('alice-impostor');
 $le = sso_login($evil, 'alice@other.test', '', 'oid-impostor');
 ok(strpos($le['finalUrl'], 'sso_error=identity_conflict') !== false && $le['final']['status'] === 403,
     'a different identity mapping to "alice" is blocked (identity_conflict)', hops_text($le));
+}
 
 // ---------------------------------------------------------------------------
 check_group('site creation');
@@ -421,11 +433,12 @@ $r = api($anon, 'GET', '/alice/system/api/v1/sites', null);
 ok($r['status'] === 401 || $r['status'] === 403, 'an anonymous caller cannot list alice\'s sites', 'HTTP ' . $r['status']);
 
 // ---------------------------------------------------------------------------
-check_group('header size');
-// a long working session: many reloads of the editor + a few sites + logins
-for ($i = 0; $i < 10; $i++) {
-    $alice->request('GET', "http://iam.$base/alice/");
-    session_tokens($alice, 'alice', 'alicesite');
+if (want('header size')) {
+    check_group('header size');
+    // a long working session: many reloads of the editor + a few sites + logins
+    for ($i = 0; $i < 10; $i++) {
+        $alice->request('GET', "http://iam.$base/alice/");
+        session_tokens($alice, 'alice', 'alicesite');
 }
 for ($i = 0; $i < 5; $i++) {
     sso_login($alice, 'alice@example.test', '', 'oid-alice');
@@ -456,19 +469,21 @@ ok($r['status'] === 200 && stripos($r['body'], 'Request Header') === false,
     'a request with the accumulated cookies + bearer is accepted (no 400 header-too-large)', 'HTTP ' . $r['status']);
 printf("info  largest Cookie header seen: %d bytes (%s); largest request headers: %d bytes\n",
     $alice->maxCookieHeader, $alice->maxCookieHeaderUrl, $alice->maxRequestHeaders);
+}
 
 // ---------------------------------------------------------------------------
-check_group('logout');
-$pre = new Browser('alice-pre-logout');
-sso_login($pre, 'alice@example.test', '', 'oid-alice');
-$preTokens = session_tokens($pre, 'alice');
-// Every logout assertion is gated on this control: without a live session
-// first, "cannot refresh after logout" would pass vacuously.
-$live = ok(is_array($preTokens), 'control: a signed-in browser can refresh its session');
-// snapshot this browser's cookies to replay after logout (a copied cookie jar)
-$stolen = array();
-foreach (array("http://$base/", "http://iam.$base/alice/") as $u) {
-    $stolen[$u] = substr($pre->cookieHeaderFor($u), 8);
+if (want('logout')) {
+    check_group('logout');
+    $pre = new Browser('alice-pre-logout');
+    sso_login($pre, 'alice@example.test', '', 'oid-alice');
+    $preTokens = session_tokens($pre, 'alice');
+    // Every logout assertion is gated on this control: without a live session
+    // first, "cannot refresh after logout" would pass vacuously.
+    $live = ok(is_array($preTokens), 'control: a signed-in browser can refresh its session');
+    // snapshot this browser's cookies to replay after logout (a copied cookie jar)
+    $stolen = array();
+    foreach (array("http://$base/", "http://iam.$base/alice/") as $u) {
+        $stolen[$u] = substr($pre->cookieHeaderFor($u), 8);
 }
 $lo = $pre->request('GET', "http://$base/logout.php");
 ok($live && $lo['status'] >= 300 && $lo['status'] < 400 && strpos($lo['location'], "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/logout") === 0,
@@ -501,6 +516,7 @@ foreach (array($base, "iam.$base", "oer.$base", "courses.$base") as $host) {
 }
 ok($live && count($minted) === 0, 'a refresh token copied before logout cannot mint a new JWT on any HAXiam host after logout',
     count($minted) ? 'still accepted on: ' . implode(', ', $minted) : '');
+}
 
 // ---------------------------------------------------------------------------
 $failed = 0;
