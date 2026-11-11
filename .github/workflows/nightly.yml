@@ -1,0 +1,92 @@
+name: nightly
+
+# HAXiam nightly (haxtheweb/issues#3262). Plain scripting, no AI.
+#
+# Boots a THROWAWAY HAXiam on the runner (real installer + harden-security.sh,
+# haxcms-php core at the latest default branch) with a local mock identity
+# provider in place of Azure (testing/nightly/mock-idp/, fake tenant, no real
+# credentials, nothing touches a live deployment), then checks the core flows:
+# SSO login/logout, rejected ID tokens, per-user site creation, tenant
+# isolation, and request-header size against common 8 KB server limits.
+#
+# Failures turn the run red. With the optional HAX_ISSUES_TOKEN secret
+# (Issues: read and write on haxtheweb/issues) the scheduled/manual run also
+# opens or comments on a `[nightly] haxiam: <check>` issue there; without it,
+# filing is skipped with a note in the job summary.
+on:
+  schedule:
+    - cron: "11 8 * * *" # 3:11 AM America/New_York (EST); 4:11 AM during EDT
+  workflow_dispatch:
+    inputs:
+      haxcms_ref:
+        description: "haxcms-php branch or tag to boot as the core"
+        required: false
+        default: "master"
+  pull_request:
+    paths:
+      - ".github/workflows/nightly.yml"
+      - "testing/nightly/**"
+      - "login.php"
+      - "logout.php"
+      - "oauth-callback.php"
+      - "system/**"
+      - "scripts/install/**"
+      - "scripts/utilities/harden-security.sh"
+permissions:
+  contents: read
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  flows:
+    name: HAXiam flows (mock IdP)
+    # The installer only supports the Ubuntu LTS releases it lists.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Boot throwaway HAXiam
+        id: boot
+        env:
+          HAXCMS_REF: ${{ inputs.haxcms_ref || 'master' }}
+        run: |
+          set -o pipefail
+          sudo -E env CI=true HAXCMS_REF="$HAXCMS_REF" bash testing/nightly/boot.sh 2>&1 | tee "$RUNNER_TEMP/boot.log"
+      - name: Unit tests
+        id: unit
+        if: steps.boot.outcome == 'success'
+        working-directory: /var/www/iam
+        run: |
+          sudo php testing/azureOIDCTest.php
+          sudo php testing/liberateSymlinksTest.php
+      - name: Flow checks
+        id: flows
+        if: always() && steps.boot.outcome == 'success'
+        # root only so it can read _iamConfig/identities (0750 www-data)
+        run: sudo php testing/nightly/flows.php --report "$RUNNER_TEMP/report.json" --root /var/www/iam
+      - name: Summary and issues
+        if: always()
+        env:
+          # never file issues from pull request runs
+          HAX_ISSUES_TOKEN: ${{ github.event_name != 'pull_request' && secrets.HAX_ISSUES_TOKEN || '' }}
+          BOOT_FAILED: ${{ steps.boot.outcome == 'failure' && 'boot' || '' }}
+          UNIT_FAILED: ${{ steps.unit.outcome == 'failure' && 'unit tests' || '' }}
+        run: |
+          php testing/nightly/file-issues.php --report "$RUNNER_TEMP/report.json" \
+            --failed-step "$BOOT_FAILED" --failed-step "$UNIT_FAILED"
+          if [ -n "$BOOT_FAILED" ] && [ -f "$RUNNER_TEMP/boot.log" ]; then
+            {
+              echo
+              echo "Last lines of the boot output:"
+              echo
+              echo '~~~text'
+              tail -n 60 "$RUNNER_TEMP/boot.log"
+              echo '~~~'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Apache and PHP error logs
+        if: failure()
+        run: sudo tail -n 80 /var/log/apache2/error.log || true
