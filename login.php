@@ -1,6 +1,13 @@
 <?php
 define("IAM_INTERNALS", "login");
 include_once 'system/lib/IAM.php';
+// Composer autoload (league/oauth2-client, firebase/php-jwt): building the
+// Azure authorize URL needs GenericProvider, so load it here the same way
+// oauth-callback.php and logout.php do. Without it an enabled Azure provider
+// always lands on sso_error=azure_url_failed.
+if (file_exists(IAM_ROOT . '/vendor/autoload.php')) {
+	require_once IAM_ROOT . '/vendor/autoload.php';
+}
 
 // Surface OAuth/OIDC callback errors to the user (H2 identity_conflict + the
 // existing sso_error codes produced by oauth-callback.php). Render a minimal
@@ -41,9 +48,13 @@ if (isset($_GET['sso_error']) && is_string($_GET['sso_error']) && trim($_GET['ss
 }
 unset($__sso_err, $__sso_admin_email, $__sso_messages, $__sso_msg, $__sso_contact);
 
-include_once IAM_ROOT . '/_iamConfig/iamConfig.php';
+// bootstrapHAX.php MUST come before iamConfig.php: iamConfig.php calls into
+// $HAXCMS (refresh-token issuance) when the session already has a user, which
+// is a fatal TypeError if $HAXCMS is not built yet (same order as
+// oauth-callback.php).
 include_once IAM_ROOT . '/cores/' . HAXIAM_ACTIVE_CORE . '/system/backend/php/bootstrapHAX.php';
 include_once $HAXCMS->configDirectory . '/config.php';
+include_once IAM_ROOT . '/_iamConfig/iamConfig.php';
 if (isset($IAM->enterprise->userVar)) {
 	// execute setting up the IAM wrapper
 	// Security (H3): set the Secure cookie flag when the request is over TLS so
