@@ -484,38 +484,49 @@ if (want('logout')) {
     $stolen = array();
     foreach (array("http://$base/", "http://iam.$base/alice/") as $u) {
         $stolen[$u] = substr($pre->cookieHeaderFor($u), 8);
-}
-$lo = $pre->request('GET', "http://$base/logout.php");
-ok($live && $lo['status'] >= 300 && $lo['status'] < 400 && strpos($lo['location'], "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/logout") === 0,
-    'logout.php hands off to the IdP logout endpoint (not followed)', 'HTTP ' . $lo['status'] . ' ' . $lo['location']);
-$cleared = array();
-foreach ($lo['cookies'] as $c) {
-    if (preg_match('/^([^=]+)=deleted/', $c, $mm) || preg_match('/^([^=]+)=;/', $c, $mm)) {
-        $cleared[] = $mm[1];
     }
-}
-ok($live && in_array('haxcms_refresh_token', $cleared, true) && in_array('PHPSESSID', $cleared, true),
-    'logout.php expires the session and refresh-token cookies', 'cleared: ' . implode(', ', $cleared));
-$r = $pre->request('GET', "http://iam.$base/alice/");
-ok($live && $r['status'] >= 300 && $r['status'] < 400 && strpos($r['location'], 'login.php') !== false,
-    'after logout the editing address sends the browser to login', 'HTTP ' . $r['status'] . ' ' . $r['location']);
-$r = $pre->request('POST', "http://iam.$base/alice/system/api/v1/session/refresh", array(), '{}');
-ok($live && $r['status'] !== 200, 'after logout the same browser cannot mint a new JWT from leftover cookies', 'HTTP ' . $r['status']);
-// The same cookies replayed (a copied jar, or a shared computer): no HAXiam
-// host may still mint a JWT from them once the user has logged out. Every
-// user space has system/ on every host, so try them all.
-$minted = array();
-foreach (array($base, "iam.$base", "oer.$base", "courses.$base") as $host) {
-    $replay = new Browser("replay-$host");
-    $jar = $stolen["http://iam.$base/alice/"] . '; ' . $stolen["http://$base/"];
-    $r = $replay->request('POST', "http://$host/alice/system/api/v1/session/refresh", array('Cookie: ' . $jar), '{}');
-    $d = json_decode($r['body'], true);
-    if ($r['status'] === 200 && is_array($d) && !empty($d['jwt'])) {
-        $minted[] = $host;
+    $lo = $pre->request('GET', "http://$base/logout.php");
+    ok($live && $lo['status'] >= 300 && $lo['status'] < 400 && strpos($lo['location'], "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/logout") === 0,
+        'logout.php hands off to the IdP logout endpoint (not followed)', 'HTTP ' . $lo['status'] . ' ' . $lo['location']);
+    $cleared = array();
+    foreach ($lo['cookies'] as $c) {
+        if (preg_match('/^([^=]+)=deleted/', $c, $mm) || preg_match('/^([^=]+)=;/', $c, $mm)) {
+            $cleared[] = $mm[1];
+        }
     }
-}
-ok($live && count($minted) === 0, 'a refresh token copied before logout cannot mint a new JWT on any HAXiam host after logout',
-    count($minted) ? 'still accepted on: ' . implode(', ', $minted) : '');
+    ok($live && in_array('haxcms_refresh_token', $cleared, true) && in_array('PHPSESSID', $cleared, true),
+        'logout.php expires the session and refresh-token cookies', 'cleared: ' . implode(', ', $cleared));
+    $r = $pre->request('GET', "http://iam.$base/alice/");
+    ok($live && $r['status'] >= 300 && $r['status'] < 400 && strpos($r['location'], 'login.php') !== false,
+        'after logout the editing address sends the browser to login', 'HTTP ' . $r['status'] . ' ' . $r['location']);
+    $r = $pre->request('POST', "http://iam.$base/alice/system/api/v1/session/refresh", array(), '{}');
+    ok($live && $r['status'] !== 200, 'after logout the same browser cannot mint a new JWT from leftover cookies', 'HTTP ' . $r['status']);
+    // The same cookies replayed (a copied jar, or a shared computer): no HAXiam
+    // host may still mint a JWT from them once the user has logged out. Every
+    // user space has system/ on every host, so try them all.
+    // Each copied cookie on its own: the editor's (iam host) and the one
+    // login.php / oauth-callback.php set on the base host.
+    $minted = array();
+    foreach ($stolen as $from => $jar) {
+        if (trim($jar) === '') {
+            continue;
+        }
+        foreach (array($base, "iam.$base", "oer.$base", "courses.$base") as $host) {
+            $replay = new Browser("replay-$host");
+            $r = $replay->request('POST', "http://$host/alice/system/api/v1/session/refresh", array('Cookie: ' . $jar), '{}');
+            $d = json_decode($r['body'], true);
+            if ($r['status'] === 200 && is_array($d) && !empty($d['jwt'])) {
+                $minted[] = parse_url($from, PHP_URL_HOST) . ' cookie on ' . $host;
+            }
+        }
+    }
+    ok($live && count($minted) === 0, 'a refresh token copied before logout cannot mint a new JWT on any HAXiam host after logout',
+        count($minted) ? 'still accepted: ' . implode(', ', $minted) : '');
+    // revocation covers what existed at logout, not the user's next sign-in
+    $again = new Browser('alice-after-logout');
+    $la3 = sso_login($again, 'alice@example.test', '', 'oid-alice');
+    ok($live && $la3['final']['status'] === 200 && is_array(session_tokens($again, 'alice')),
+        'alice can sign in again after logout and her new session refreshes', hops_text($la3));
 }
 
 // ---------------------------------------------------------------------------
