@@ -68,6 +68,20 @@ class AzureOIDC
     public $path;
 
     /**
+     * Raw identity (UPN/email) from the most recent handleCallback(), read by
+     * oauth-callback.php for identity binding. Declared so it is null (not an
+     * undefined or dynamic property) before a callback succeeds.
+     * @var string|null
+     */
+    public $lastRawIdentity = null;
+
+    /**
+     * Entra object id (oid claim) from the most recent handleCallback().
+     * @var string|null
+     */
+    public $lastOid = null;
+
+    /**
      * Static JWKS HTTP fetcher override (test seam). Should return an array.
      * @var callable|null
      */
@@ -688,7 +702,6 @@ class AzureOIDC
         $body = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err = curl_error($ch);
-        curl_close($ch);
         if ($body === false || (int)$httpCode < 200 || (int)$httpCode >= 300) {
             throw new RuntimeException('Microsoft JWKS fetch failed (HTTP ' . (int)$httpCode . ')');
         }
