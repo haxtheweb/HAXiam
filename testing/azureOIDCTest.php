@@ -385,7 +385,6 @@ try {
     // the correct relative location.
     $expectedSuffix = '/_iamConfig/azure.json';
     $reflection = new ReflectionMethod('AzureOIDC', 'defaultConfigPath');
-    $reflection->setAccessible(true);
     $defaultPath = $reflection->invoke(null);
     check(
         substr($defaultPath, -strlen($expectedSuffix)) === $expectedSuffix,

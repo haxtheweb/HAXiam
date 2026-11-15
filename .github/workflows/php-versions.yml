@@ -1,0 +1,56 @@
+name: php-versions
+
+# Runs HAXiam's own PHP checks on every supported PHP version, on each pull
+# request and push. The nightly workflow boots a full install on the PHP the
+# installer picks for ubuntu-24.04 only; this covers the rest of the range.
+# No network or live deployment: the unit tests use their built-in seams.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  php:
+    name: "PHP ${{ matrix.php-version }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ["8.3", "8.4", "8.5", "8.6"]
+    runs-on: ubuntu-latest
+    # 8.6 reaches GA on 2026-11-19; until then it is a release candidate, so a
+    # failure there shows on the run without failing the check. Drop this once
+    # 8.6.0 is out.
+    continue-on-error: ${{ matrix.php-version == '8.6' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up PHP
+        uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: mbstring, xml, curl, zip, gd, openssl
+          # Deprecations are reported, so a function removed in a newer PHP
+          # shows up here before it breaks.
+          ini-values: "error_reporting=E_ALL, display_errors=stderr"
+          coverage: none
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Syntax check
+        run: |
+          set -euo pipefail
+          git ls-files -z '*.php' | xargs -0 -n1 php -l > /dev/null
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          for t in testing/azureOIDCTest.php testing/liberateSymlinksTest.php; do
+            out="$(php "$t" 2>&1)"
+            echo "$out"
+            if printf '%s' "$out" | grep -q 'Deprecated:'; then
+              echo "::error file=$t::PHP ${{ matrix.php-version }} reported a deprecation"
+              exit 1
+            fi
+          done

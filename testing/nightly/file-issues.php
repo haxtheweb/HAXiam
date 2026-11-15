@@ -87,7 +87,6 @@ function github($token, $method, $path, $body = null)
     ));
     $text = curl_exec($ch);
     $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    curl_close($ch);
     if ($text === false || $code < 200 || $code > 299) {
         throw new RuntimeException("$method $path -> $code: " . substr((string) $text, 0, 300));
     }

@@ -102,13 +102,11 @@ class Browser
         $raw = curl_exec($ch);
         if ($raw === false) {
             $err = curl_error($ch);
-            curl_close($ch);
             return array('status' => 0, 'headers' => array(), 'body' => '', 'location' => '', 'error' => $err, 'cookies' => array());
         }
         $sent = (string) curl_getinfo($ch, CURLINFO_HEADER_OUT);
         $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         $hsize = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-        curl_close($ch);
         $this->measure($sent, $url);
         $headBlock = substr($raw, 0, $hsize);
         $respBody = (string) substr($raw, $hsize);
@@ -147,7 +145,6 @@ class Browser
         curl_setopt($ch, CURLOPT_SHARE, $this->share);
         curl_setopt($ch, CURLOPT_COOKIEFILE, '');
         $list = curl_getinfo($ch, CURLINFO_COOKIELIST);
-        curl_close($ch);
         $pairs = array();
         foreach ((array) $list as $row) {
             $f = explode("\t", $row);
